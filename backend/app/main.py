@@ -73,13 +73,44 @@ def startup_event():
 def _migrate_db():
     """
     Aplica migrações incrementais no banco SQLite sem perder dados.
-    Renomeia card/port para pon conforme sintaxe ZTE Titan (gpon-olt_SLOT/PON).
     """
     from .database import engine
     import sqlalchemy as sa
 
     with engine.connect() as conn:
-        # Verifica colunas existentes na tabela olt_ports
+        # --- Migração tabela users ---
+        try:
+            result = conn.execute(sa.text("PRAGMA table_info(users)"))
+            ucols = {row[1] for row in result.fetchall()}
+
+            # Renomeia hashed_password → password_hash
+            if "hashed_password" in ucols and "password_hash" not in ucols:
+                conn.execute(sa.text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(200)"))
+                conn.execute(sa.text("UPDATE users SET password_hash = hashed_password"))
+                conn.commit()
+                print("✅ Migração users: password_hash criado")
+
+            # Renomeia totp_enabled → is_2fa_enabled
+            if "totp_enabled" in ucols and "is_2fa_enabled" not in ucols:
+                conn.execute(sa.text("ALTER TABLE users ADD COLUMN is_2fa_enabled BOOLEAN DEFAULT 0"))
+                conn.execute(sa.text("UPDATE users SET is_2fa_enabled = totp_enabled"))
+                conn.commit()
+                print("✅ Migração users: is_2fa_enabled criado")
+
+            # Garante is_2fa_enabled existe
+            if "is_2fa_enabled" not in ucols and "totp_enabled" not in ucols:
+                conn.execute(sa.text("ALTER TABLE users ADD COLUMN is_2fa_enabled BOOLEAN DEFAULT 0"))
+                conn.commit()
+
+            # Garante password_hash existe
+            if "password_hash" not in ucols and "hashed_password" not in ucols:
+                conn.execute(sa.text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(200)"))
+                conn.commit()
+
+        except Exception as e:
+            print(f"⚠️  Migração users: {e}")
+
+        # --- Migração tabela olt_ports ---
         try:
             result = conn.execute(sa.text("PRAGMA table_info(olt_ports)"))
             cols = {row[1] for row in result.fetchall()}

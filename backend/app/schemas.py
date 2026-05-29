@@ -30,7 +30,7 @@ class UserResponse(BaseModel):
     email: Optional[str] = None
     role: str
     is_active: bool
-    totp_enabled: bool
+    is_2fa_enabled: bool
     created_at: datetime
     last_login: Optional[datetime] = None
 
@@ -52,6 +52,16 @@ class TokenResponse(BaseModel):
 
 
 class TOTPSetupResponse(BaseModel):
+    secret: str
+    qr_code_url: str
+    provisioning_uri: str
+
+
+class TwoFAVerify(BaseModel):
+    totp_code: str
+
+
+class TwoFASetupResponse(BaseModel):
     secret: str
     qr_code_url: str
     provisioning_uri: str

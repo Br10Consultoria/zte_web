@@ -9,13 +9,13 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
-    hashed_password = Column(String(200), nullable=False)
+    password_hash = Column(String(200), nullable=False)   # usado em auth.py como user.password_hash
     full_name = Column(String(100), nullable=True)
     email = Column(String(100), nullable=True)
-    role = Column(String(20), default="viewer")  # admin | viewer
+    role = Column(String(20), default="viewer")           # admin | viewer
     is_active = Column(Boolean, default=True)
     totp_secret = Column(String(32), nullable=True)
-    totp_enabled = Column(Boolean, default=False)
+    is_2fa_enabled = Column(Boolean, default=False)       # usado em auth.py como user.is_2fa_enabled
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
@@ -29,7 +29,7 @@ class OLT(Base):
     port = Column(Integer, default=23)
     username = Column(String(50), nullable=False)
     password = Column(String(100), nullable=False)
-    protocol = Column(String(10), default="telnet")  # telnet | ssh
+    protocol = Column(String(10), default="telnet")       # telnet | ssh
     snmp_community = Column(String(50), nullable=True)
     snmp_version = Column(String(5), default="2c")
     status = Column(String(20), default="unknown")
@@ -52,7 +52,7 @@ class OLTPort(Base):
     id = Column(Integer, primary_key=True, index=True)
     olt_id = Column(Integer, ForeignKey("olts.id"), nullable=False)
     slot = Column(Integer, nullable=False)
-    pon = Column(Integer, nullable=False)   # número da porta PON (gpon-olt_SLOT/PON)
+    pon = Column(Integer, nullable=False)    # número da porta PON (gpon-olt_SLOT/PON)
     port_type = Column(String(20), default="gpon")
     description = Column(String(200), nullable=True)
     status = Column(String(20), default="unknown")
@@ -67,6 +67,7 @@ class AuditLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    username = Column(String(50), nullable=True)          # usado em routes/auth.py
     action = Column(String(100), nullable=False)
     resource = Column(String(100), nullable=True)
     details = Column(Text, nullable=True)
