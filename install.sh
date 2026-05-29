@@ -103,7 +103,6 @@ info "Instalando dependências Python (pode demorar alguns minutos)..."
     "uvicorn[standard]" \
     "sqlalchemy" \
     "python-jose[cryptography]" \
-    "passlib[bcrypt]" \
     "bcrypt>=4.2.0" \
     "python-multipart" \
     "pyotp" \

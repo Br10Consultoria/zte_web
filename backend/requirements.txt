@@ -3,7 +3,6 @@ uvicorn[standard]
 sqlalchemy
 alembic
 python-jose[cryptography]
-passlib[bcrypt]
 bcrypt>=4.2.0
 python-multipart
 pyotp

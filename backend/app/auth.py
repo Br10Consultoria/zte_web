@@ -5,7 +5,9 @@ import qrcode
 import io
 import base64
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import hashlib
+import hmac
+import os
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -13,16 +15,35 @@ from .config import settings
 from .database import get_db
 from .models import User
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    """Gera hash seguro com PBKDF2-SHA256 (nativo Python, sem dependencias externas)."""
+    salt = os.urandom(32)
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 260000)
+    return salt.hex() + ':' + key.hex()
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verifica senha contra hash PBKDF2. Tambem aceita hashes bcrypt legados."""
+    try:
+        if ':' in hashed_password and not hashed_password.startswith('$'):
+            # Formato PBKDF2: salt_hex:key_hex
+            salt_hex, key_hex = hashed_password.split(':', 1)
+            salt = bytes.fromhex(salt_hex)
+            stored_key = bytes.fromhex(key_hex)
+            new_key = hashlib.pbkdf2_hmac('sha256', plain_password.encode('utf-8'), salt, 260000)
+            return hmac.compare_digest(stored_key, new_key)
+        else:
+            # Tenta bcrypt como fallback para hashes legados
+            try:
+                import bcrypt
+                return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+            except Exception:
+                return False
+    except Exception:
+        return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
