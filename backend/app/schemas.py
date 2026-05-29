@@ -112,6 +112,7 @@ class OLTPortResponse(BaseModel):
     id: int
     olt_id: int
     slot: int
+    card: int = 1
     port: int
     port_type: str
     description: Optional[str] = None

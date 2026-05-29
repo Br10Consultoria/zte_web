@@ -156,6 +156,7 @@ def discover_ports(
         port_obj = OLTPort(
             olt_id=olt_id,
             slot=p["slot"],
+            card=p.get("card", 1),
             port=p["port"],
             port_type=p.get("port_type", "gpon"),
             description=p.get("description", ""),

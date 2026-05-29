@@ -60,6 +60,7 @@ if os.path.exists(frontend_path):
 def startup_event():
     print(f"🚀 Iniciando {settings.APP_NAME} v{settings.APP_VERSION}")
     init_db()
+    _migrate_db()
     db = SessionLocal()
     try:
         create_default_admin(db)
@@ -67,3 +68,18 @@ def startup_event():
         db.close()
     print("✅ Sistema iniciado com sucesso!")
     print(f"📖 Documentação API: http://localhost:8000/api/docs")
+
+
+def _migrate_db():
+    """Aplica migrações incrementais no banco SQLite sem perder dados."""
+    from .database import engine
+    with engine.connect() as conn:
+        # Adiciona coluna 'card' na tabela olt_ports se não existir
+        try:
+            conn.execute(__import__('sqlalchemy').text(
+                "ALTER TABLE olt_ports ADD COLUMN card INTEGER NOT NULL DEFAULT 1"
+            ))
+            conn.commit()
+            print("✅ Migração: coluna 'card' adicionada à tabela olt_ports")
+        except Exception:
+            pass  # Coluna já existe

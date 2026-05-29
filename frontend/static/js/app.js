@@ -346,7 +346,7 @@ function app() {
     openONUsByPort(olt, port) {
       this.onuFilter.olt_id = String(olt.id);
       this.loadOLTPortsForFilter();
-      this.onuFilter.port_id = `${port.id}|${port.slot}|${port.port}`;
+      this.onuFilter.port_id = `${port.id}|${port.slot}|${port.card || 1}|${port.port}`;
       this.setPage('onus');
       this.loadONUStatus(false);
     },
@@ -370,7 +370,14 @@ function app() {
     // ============================================================
     async loadONUStatus(forceRefresh = false) {
       if (!this.onuFilter.port_id) return;
-      const [portId, slot, port] = this.onuFilter.port_id.split('|');
+      const parts = this.onuFilter.port_id.split('|');
+      // Suporta formato antigo (portId|slot|port) e novo (portId|slot|card|port)
+      let slot, port;
+      if (parts.length === 4) {
+        [, slot, , port] = parts;
+      } else {
+        [, slot, port] = parts;
+      }
       const oltId = this.onuFilter.olt_id;
 
       this.onuLoading = true;
@@ -410,7 +417,13 @@ function app() {
 
     async openONUDetail(onu) {
       if (!this.onuFilter.port_id) return;
-      const [portId, slot, port] = this.onuFilter.port_id.split('|');
+      const parts = this.onuFilter.port_id.split('|');
+      let slot, port;
+      if (parts.length === 4) {
+        [, slot, , port] = parts;
+      } else {
+        [, slot, port] = parts;
+      }
       const onuId = onu.onu_index.split(':')[1];
       this.onuDetailContext = { oltId: this.onuFilter.olt_id, slot, port, onuId };
       this.onuDetailModal = true;
@@ -420,7 +433,7 @@ function app() {
 
     async openONUDetailFromSearch(r) {
       const onuId = r.onu_index.split(':')[1];
-      this.onuDetailContext = { oltId: this.searchOltId, slot: r.slot, port: r.port, onuId };
+      this.onuDetailContext = { oltId: this.searchOltId, slot: r.slot, card: r.card || 1, port: r.port, onuId };
       this.onuDetailModal = true;
       this.detailTab = 'status';
       await this.fetchONUDetail(false);

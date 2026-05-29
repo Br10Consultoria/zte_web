@@ -381,7 +381,7 @@
             <select x-model="onuFilter.port_id" class="input-field" style="width:140px" :disabled="!onuFilter.olt_id">
               <option value="">Selecione a PON</option>
               <template x-for="p in filteredPorts" :key="p.id">
-                <option :value="p.id + '|' + p.slot + '|' + p.port" x-text="'Slot '+p.slot+' / PON '+p.port"></option>
+                <option :value="p.id + '|' + p.slot + '|' + (p.card || 1) + '|' + p.port" x-text="'Slot '+p.slot+(p.card && p.card !== 1 ? '/'+p.card : '')+' / PON '+p.port"></option>
               </template>
             </select>
             <button @click="loadONUStatus(false)" class="btn btn-primary" :disabled="!onuFilter.port_id">

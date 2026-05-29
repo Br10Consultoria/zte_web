@@ -47,6 +47,7 @@ class OLTPort(Base):
     id = Column(Integer, primary_key=True, index=True)
     olt_id = Column(Integer, ForeignKey("olts.id"), nullable=False)
     slot = Column(Integer, nullable=False)
+    card = Column(Integer, default=1, nullable=False)  # subslot (gpon-olt_SLOT/CARD/PORT)
     port = Column(Integer, nullable=False)
     port_type = Column(String(20), default="gpon")
     description = Column(String(200), nullable=True)
