@@ -13,4 +13,3 @@ aiofiles
 httpx
 python-dotenv
 Pillow
-pysnmp

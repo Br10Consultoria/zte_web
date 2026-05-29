@@ -55,6 +55,7 @@ apt-get install -y -qq \
     python3-venv \
     python3-dev \
     redis-server \
+    snmp \
     redis-tools \
     gcc \
     libffi-dev \
@@ -111,8 +112,7 @@ info "Instalando dependências Python (pode demorar alguns minutos)..."
     "paramiko" \
     "aiofiles" \
     "python-dotenv" \
-    "Pillow" \
-    "pysnmp"
+    "Pillow"
 ok "Dependências Python instaladas"
 
 # ============================================================

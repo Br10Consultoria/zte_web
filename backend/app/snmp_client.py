@@ -1,96 +1,159 @@
 """
-SNMP Client para ZTE Titan (C600/C610/C620/C650)
-Versão: SNMPv2c
-Usado para descoberta rápida de interfaces PON e coleta de dados.
+SNMP Client para ZTE Titan (C320/C600/C610/C620/C650)
+Usa subprocess com snmpwalk/snmpget do sistema operacional.
+Mais confiável que a API Python do pysnmp (que muda muito entre versões).
+
+Instalação no servidor:
+  apt-get install -y snmp
 
 OIDs relevantes ZTE Titan:
-  ifDescr         : 1.3.6.1.2.1.2.2.1.2      - Nome da interface (ex: gpon-olt_1/1)
+  ifDescr         : 1.3.6.1.2.1.2.2.1.2      - Nome da interface (gpon-olt_1/1)
   ifOperStatus    : 1.3.6.1.2.1.2.2.1.8      - Status operacional (1=up, 2=down)
-  ifAdminStatus   : 1.3.6.1.2.1.2.2.1.7      - Status admin (1=up, 2=down)
-  ifIndex         : 1.3.6.1.2.1.2.2.1.1      - Índice da interface
-  sysDescr        : 1.3.6.1.2.1.1.1.0        - Descrição do sistema (modelo/firmware)
+  sysDescr        : 1.3.6.1.2.1.1.1.0        - Modelo/firmware
   sysName         : 1.3.6.1.2.1.1.5.0        - Nome do sistema
-  sysUpTime       : 1.3.6.1.2.1.1.3.0        - Uptime
-
-ZTE GPON OIDs (MIB proprietária):
-  zxAnGponOltTable  : 1.3.6.1.4.1.3902.1082.500.10.2.1
-  zxAnGponOnuTable  : 1.3.6.1.4.1.3902.1082.500.10.2.2
 """
 import re
+import subprocess
+import shutil
 from typing import List, Dict, Optional, Tuple
-
-try:
-    from pysnmp.hlapi.v3arch.asyncio import *
-    from pysnmp.hlapi import *
-    PYSNMP_AVAILABLE = True
-except ImportError:
-    try:
-        from pysnmp.hlapi import *
-        PYSNMP_AVAILABLE = True
-    except ImportError:
-        PYSNMP_AVAILABLE = False
 
 
 # OIDs padrão MIB-II
 OID_IF_DESCR        = "1.3.6.1.2.1.2.2.1.2"
 OID_IF_OPER_STATUS  = "1.3.6.1.2.1.2.2.1.8"
-OID_IF_ADMIN_STATUS = "1.3.6.1.2.1.2.2.1.7"
 OID_SYS_DESCR       = "1.3.6.1.2.1.1.1.0"
 OID_SYS_NAME        = "1.3.6.1.2.1.1.5.0"
-OID_SYS_UPTIME      = "1.3.6.1.2.1.1.3.0"
 
 
 class SNMPError(Exception):
     pass
 
 
-def _snmp_get(host: str, community: str, oid: str, port: int = 161,
-              version: str = "2c", timeout: int = 5, retries: int = 2):
-    """Executa um SNMP GET simples."""
-    if not PYSNMP_AVAILABLE:
-        raise SNMPError("pysnmp não está instalado")
-
-    error_indication, error_status, error_index, var_binds = next(
-        getCmd(
-            SnmpEngine(),
-            CommunityData(community, mpModel=1 if version == "2c" else 0),
-            UdpTransportTarget((host, port), timeout=timeout, retries=retries),
-            ContextData(),
-            ObjectType(ObjectIdentity(oid))
-        )
-    )
-
-    if error_indication:
-        raise SNMPError(f"SNMP GET error: {error_indication}")
-    if error_status:
-        raise SNMPError(f"SNMP GET status error: {error_status.prettyPrint()}")
-
-    return var_binds
+def _find_snmp_tool(name: str) -> Optional[str]:
+    """Localiza o binário snmpwalk/snmpget no sistema."""
+    path = shutil.which(name)
+    if path:
+        return path
+    # Caminhos alternativos comuns
+    for candidate in [f"/usr/bin/{name}", f"/usr/local/bin/{name}", f"/opt/homebrew/bin/{name}"]:
+        import os
+        if os.path.isfile(candidate):
+            return candidate
+    return None
 
 
 def _snmp_walk(host: str, community: str, oid: str, port: int = 161,
-               version: str = "2c", timeout: int = 10, retries: int = 2) -> List[Tuple]:
-    """Executa um SNMP WALK (getBulk/getNext) e retorna lista de (oid, value)."""
-    if not PYSNMP_AVAILABLE:
-        raise SNMPError("pysnmp não está instalado")
+               version: str = "2c", timeout: int = 10) -> List[Tuple[str, str]]:
+    """
+    Executa snmpwalk via subprocess.
+    Retorna lista de (oid_str, value_str).
+    """
+    tool = _find_snmp_tool("snmpwalk")
+    if not tool:
+        raise SNMPError(
+            "snmpwalk não encontrado. Instale com: apt-get install -y snmp"
+        )
 
-    results = []
-    for (error_indication, error_status, error_index, var_binds) in nextCmd(
-        SnmpEngine(),
-        CommunityData(community, mpModel=1 if version == "2c" else 0),
-        UdpTransportTarget((host, port), timeout=timeout, retries=retries),
-        ContextData(),
-        ObjectType(ObjectIdentity(oid)),
-        lexicographicMode=False
-    ):
-        if error_indication:
-            break
-        if error_status:
-            break
-        for var_bind in var_binds:
-            results.append((str(var_bind[0]), str(var_bind[1])))
+    cmd = [
+        tool,
+        "-v", version,
+        "-c", community,
+        "-t", str(timeout),
+        "-r", "2",
+        "-On",          # Exibe OIDs em formato numérico
+        f"{host}:{port}",
+        oid
+    ]
 
-    return results
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout + 5
+        )
+    except subprocess.TimeoutExpired:
+        raise SNMPError(f"Timeout ao executar snmpwalk em {host}:{port}")
+    except FileNotFoundError:
+        raise SNMPError("snmpwalk não encontrado. Instale com: apt-get install -y snmp")
+
+    if result.returncode != 0 and not result.stdout:
+        err = result.stderr.strip()
+        raise SNMPError(f"snmpwalk falhou em {host}:{port}: {err}")
+
+    rows = []
+    for line in result.stdout.strip().split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        # Formato: .1.3.6.1.2.1.2.2.1.2.X = STRING: "gpon-olt_1/1"
+        # ou:      .1.3.6.1.2.1.2.2.1.2.X = INTEGER: 1
+        m = re.match(r'^([\d\.]+)\s*=\s*(?:\w+:\s*)?"?([^"]*)"?$', line)
+        if m:
+            rows.append((m.group(1).strip('.'), m.group(2).strip()))
+        else:
+            # Tenta formato mais simples
+            parts = line.split('=', 1)
+            if len(parts) == 2:
+                oid_part = parts[0].strip().strip('.')
+                val_part = parts[1].strip()
+                # Remove tipo (STRING:, INTEGER:, etc.)
+                val_part = re.sub(r'^\w+:\s*', '', val_part).strip('"').strip()
+                rows.append((oid_part, val_part))
+
+    return rows
+
+
+def _snmp_get(host: str, community: str, oid: str, port: int = 161,
+              version: str = "2c", timeout: int = 5) -> Optional[str]:
+    """
+    Executa snmpget via subprocess.
+    Retorna o valor como string ou None.
+    """
+    tool = _find_snmp_tool("snmpget")
+    if not tool:
+        raise SNMPError("snmpget não encontrado. Instale com: apt-get install -y snmp")
+
+    cmd = [
+        tool,
+        "-v", version,
+        "-c", community,
+        "-t", str(timeout),
+        "-r", "1",
+        "-On",
+        f"{host}:{port}",
+        oid
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout + 3
+        )
+    except subprocess.TimeoutExpired:
+        raise SNMPError(f"Timeout ao executar snmpget em {host}:{port}")
+    except FileNotFoundError:
+        raise SNMPError("snmpget não encontrado. Instale com: apt-get install -y snmp")
+
+    if result.returncode != 0:
+        raise SNMPError(f"snmpget falhou: {result.stderr.strip()}")
+
+    # Parse da linha de resultado
+    line = result.stdout.strip()
+    m = re.search(r'=\s*(?:\w+:\s*)?"?([^"]+)"?$', line)
+    if m:
+        return m.group(1).strip()
+    return line
+
+
+def snmp_test_connection(host: str, community: str = "public", port: int = 161,
+                         version: str = "2c") -> Tuple[bool, str]:
+    """Testa conectividade SNMP com a OLT."""
+    try:
+        val = _snmp_get(host, community, OID_SYS_DESCR, port, version, timeout=5)
+        if val:
+            return True, val
+        return False, "Sem resposta SNMP"
+    except SNMPError as e:
+        return False, str(e)
+    except Exception as e:
+        return False, f"Erro SNMP: {str(e)}"
 
 
 def snmp_get_system_info(host: str, community: str = "public", port: int = 161,
@@ -98,23 +161,23 @@ def snmp_get_system_info(host: str, community: str = "public", port: int = 161,
     """Obtém informações básicas do sistema via SNMP."""
     result = {}
     try:
-        for oid, label in [(OID_SYS_DESCR, "sys_descr"), (OID_SYS_NAME, "sys_name")]:
-            try:
-                var_binds = _snmp_get(host, community, oid, port, version)
-                if var_binds:
-                    result[label] = str(var_binds[0][1])
-            except Exception:
-                pass
+        sys_descr = _snmp_get(host, community, OID_SYS_DESCR, port, version)
+        if sys_descr:
+            result["sys_descr"] = sys_descr
+            # Extrai modelo: C320, C600, C610, C620, C650
+            m = re.search(r'(C\d{3,4})', sys_descr, re.IGNORECASE)
+            if m:
+                result["model"] = f"ZTE {m.group(1).upper()}"
+            else:
+                result["model"] = "ZTE Titan"
+            # Extrai versão de firmware
+            fw = re.search(r'[Vv](\d+\.\d+[\.\d]*)', sys_descr)
+            if fw:
+                result["firmware"] = fw.group(1)
 
-        # Extrai modelo e firmware da sysDescr
-        if "sys_descr" in result:
-            desc = result["sys_descr"]
-            model_match = re.search(r'(C600|C610|C620|C650|TITAN)', desc, re.IGNORECASE)
-            fw_match = re.search(r'[Vv]ersion\s+([\d\.]+)', desc)
-            if model_match:
-                result["model"] = f"ZTE Titan {model_match.group(1).upper()}"
-            if fw_match:
-                result["firmware"] = fw_match.group(1)
+        sys_name = _snmp_get(host, community, OID_SYS_NAME, port, version)
+        if sys_name:
+            result["sys_name"] = sys_name
 
     except Exception as e:
         result["error"] = str(e)
@@ -129,63 +192,76 @@ def snmp_discover_pon_ports(host: str, community: str = "public", port: int = 16
     Filtra interfaces do tipo gpon-olt_SLOT/PON.
     Retorna lista de dicts com slot, pon, status, if_index.
     """
-    if not PYSNMP_AVAILABLE:
-        raise SNMPError("pysnmp não disponível — instale com: pip install pysnmp")
+    # Verifica se snmpwalk está disponível
+    if not _find_snmp_tool("snmpwalk"):
+        raise SNMPError(
+            "snmpwalk não encontrado no servidor. "
+            "Instale com: apt-get install -y snmp"
+        )
 
     # Walk em ifDescr para obter todos os nomes de interfaces
     try:
         if_descr_list = _snmp_walk(host, community, OID_IF_DESCR, port, version)
+    except SNMPError:
+        raise
     except Exception as e:
         raise SNMPError(f"Falha no SNMP walk ifDescr em {host}:{port} — {e}")
 
     if not if_descr_list:
-        raise SNMPError(f"Nenhuma interface retornada via SNMP de {host}:{port}. Verifique community e acesso SNMP.")
+        raise SNMPError(
+            f"Nenhuma interface retornada via SNMP de {host}:{port}. "
+            f"Verifique a community string e se o SNMP está habilitado na OLT."
+        )
 
     # Filtra apenas interfaces gpon-olt_SLOT/PON
     pon_ports = []
     if_index_map = {}  # if_index -> (slot, pon)
 
     for oid_str, if_name in if_descr_list:
-        # Aceita: gpon-olt_1/1, gpon-olt_1/2, gpon_1/1, etc.
-        m = re.match(r'gpon[-_]olt[_\-]?(\d+)/(\d+)$', if_name.strip(), re.IGNORECASE)
-        if not m:
-            # Tenta formato alternativo: gpon_1/1 (sem "olt")
-            m = re.match(r'gpon[_\-](\d+)/(\d+)$', if_name.strip(), re.IGNORECASE)
+        if_name = if_name.strip()
+        # Aceita: gpon-olt_1/1, gpon-olt_1/2, GPON-OLT_1/1, etc.
+        m = re.match(r'gpon[-_]olt[_\-]?(\d+)/(\d+)$', if_name, re.IGNORECASE)
         if m:
             slot = int(m.group(1))
             pon = int(m.group(2))
             # Extrai o ifIndex do OID (último número)
-            if_index = int(oid_str.split('.')[-1])
+            try:
+                if_index = int(oid_str.split('.')[-1])
+            except (ValueError, IndexError):
+                if_index = 0
             if_index_map[if_index] = (slot, pon)
             pon_ports.append({
                 "slot": slot,
                 "pon": pon,
                 "if_index": if_index,
-                "if_name": if_name.strip(),
+                "if_name": if_name,
                 "port_type": "gpon",
-                "description": if_name.strip(),
+                "description": if_name,
                 "status": "unknown",
-                "oper_status_raw": None,
             })
 
     if not pon_ports:
+        # Debug: mostra as primeiras interfaces encontradas para diagnóstico
+        sample = [v for _, v in if_descr_list[:10]]
         raise SNMPError(
             f"Nenhuma interface gpon-olt encontrada via SNMP em {host}. "
-            f"Total de interfaces retornadas: {len(if_descr_list)}. "
-            f"Verifique se a OLT suporta SNMP e se a community '{community}' está correta."
+            f"Total de interfaces: {len(if_descr_list)}. "
+            f"Exemplos: {sample}"
         )
 
-    # Busca o status operacional (ifOperStatus) para cada porta encontrada
+    # Busca o status operacional (ifOperStatus) para cada porta
     try:
         if_oper_list = _snmp_walk(host, community, OID_IF_OPER_STATUS, port, version)
         oper_map = {}
         for oid_str, val in if_oper_list:
-            idx = int(oid_str.split('.')[-1])
-            oper_map[idx] = int(val) if val.isdigit() else 0
+            try:
+                idx = int(oid_str.split('.')[-1])
+                oper_map[idx] = int(val) if val.isdigit() else 0
+            except (ValueError, IndexError):
+                pass
 
         for p in pon_ports:
             oper = oper_map.get(p["if_index"], 0)
-            p["oper_status_raw"] = oper
             if oper == 1:
                 p["status"] = "online"
             elif oper == 2:
@@ -198,18 +274,3 @@ def snmp_discover_pon_ports(host: str, community: str = "public", port: int = 16
     # Ordena por slot, pon
     pon_ports.sort(key=lambda x: (x["slot"], x["pon"]))
     return pon_ports
-
-
-def snmp_test_connection(host: str, community: str = "public", port: int = 161,
-                         version: str = "2c") -> Tuple[bool, str]:
-    """Testa conectividade SNMP com a OLT."""
-    try:
-        var_binds = _snmp_get(host, community, OID_SYS_DESCR, port, version, timeout=5)
-        if var_binds:
-            sys_descr = str(var_binds[0][1])
-            return True, sys_descr
-        return False, "Sem resposta SNMP"
-    except SNMPError as e:
-        return False, str(e)
-    except Exception as e:
-        return False, f"Erro SNMP: {str(e)}"
