@@ -105,6 +105,8 @@ class OLTResponse(BaseModel):
     port: int
     username: str
     protocol: str
+    snmp_community: Optional[str] = None
+    snmp_version: Optional[str] = None
     status: str
     model: Optional[str] = None
     firmware: Optional[str] = None

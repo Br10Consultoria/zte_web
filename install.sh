@@ -111,7 +111,8 @@ info "Instalando dependências Python (pode demorar alguns minutos)..."
     "paramiko" \
     "aiofiles" \
     "python-dotenv" \
-    "Pillow"
+    "Pillow" \
+    "pysnmp"
 ok "Dependências Python instaladas"
 
 # ============================================================
