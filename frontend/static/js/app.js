@@ -105,7 +105,7 @@ function app() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(this.loginForm)
         });
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Erro ao fazer login');
 
         if (data.requires_2fa) {
@@ -133,7 +133,7 @@ function app() {
           },
           body: JSON.stringify({ totp_code: this.twoFACode })
         });
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Código inválido');
         this.completeLogin(data);
       } catch (e) {
@@ -181,6 +181,15 @@ function app() {
       return res;
     },
 
+    async safeJson(res) {
+      const text = await res.text().catch(() => '');
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error(`Resposta inválida do servidor (HTTP ${res.status}): ${text.substring(0, 200)}`);
+      }
+    },
+
     async apiPost(path, body) {
       const res = await fetch(`${API_BASE}${path}`, {
         method: 'POST',
@@ -224,7 +233,7 @@ function app() {
       // Health check
       try {
         const res = await fetch(`${API_BASE}/health`);
-        const data = await res.json();
+        const data = await this.safeJson(res);
         this.stats.redis = data.redis;
       } catch (e) {}
       this.stats.total_olts = this.olts.length;
@@ -235,7 +244,7 @@ function app() {
         try {
           const res = await this.apiGet(`/olts/${olt.id}/ports`);
           if (res.ok) {
-            const ports = await res.json();
+            const ports = await this.safeJson(res);
             totalPorts += ports.length;
           }
         } catch (e) {}
@@ -254,7 +263,7 @@ function app() {
     async loadOLTs() {
       try {
         const res = await this.apiGet('/olts');
-        if (res.ok) this.olts = await res.json();
+        if (res.ok) this.olts = await this.safeJson(res);
       } catch (e) {}
     },
 
@@ -280,7 +289,7 @@ function app() {
         } else {
           res = await this.apiPost('/olts', this.oltForm);
         }
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Erro ao salvar OLT');
         this.oltModal = false;
         await this.loadOLTs();
@@ -306,7 +315,7 @@ function app() {
       this.showToast(`Testando conexão com ${olt.name}...`, 'info');
       try {
         const res = await this.apiPost(`/olts/${olt.id}/test-connection`, {});
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (data.success) {
           this.showToast(`✅ ${olt.name}: Conexão OK!`, 'success');
         } else {
@@ -322,7 +331,7 @@ function app() {
       this.showToast(`Iniciando descoberta de portas em ${olt.name}...`, 'info');
       try {
         const res = await this.apiPost(`/olts/${olt.id}/discover`, {});
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Erro na descoberta');
         this.showToast(`✅ ${data.message}`, 'success');
         await this.loadOLTs();
@@ -336,7 +345,7 @@ function app() {
       try {
         const res = await this.apiGet(`/olts/${olt.id}/ports`);
         if (res.ok) {
-          this.selectedOLTPorts = await res.json();
+          this.selectedOLTPorts = await this.safeJson(res);
         }
       } catch (e) {
         this.showToast(e.message, 'error');
@@ -362,7 +371,7 @@ function app() {
       if (!this.onuFilter.olt_id) { this.filteredPorts = []; return; }
       try {
         const res = await this.apiGet(`/olts/${this.onuFilter.olt_id}/ports`);
-        if (res.ok) this.filteredPorts = await res.json();
+        if (res.ok) this.filteredPorts = await this.safeJson(res);
       } catch (e) {}
     },
 
@@ -386,10 +395,10 @@ function app() {
           : `/onus/${oltId}/pon/${slot}/${card}/${pon}/status`;
         const res = await this.apiGet(url);
         if (!res.ok) {
-          const err = await res.json();
+          const err = await this.safeJson(res);
           throw new Error(err.detail || 'Erro ao consultar ONUs');
         }
-        this.onuStatusData = await res.json();
+        this.onuStatusData = await this.safeJson(res);
       } catch (e) {
         this.showToast(e.message, 'error');
       } finally {
@@ -448,10 +457,10 @@ function app() {
           headers: { 'Authorization': `Bearer ${this.getToken()}` }
         });
         if (!res.ok) {
-          const err = await res.json();
+          const err = await this.safeJson(res);
           throw new Error(err.detail || 'Erro ao consultar ONU');
         }
-        this.onuDetailData = await res.json();
+        this.onuDetailData = await this.safeJson(res);
       } catch (e) {
         this.showToast(e.message, 'error');
       } finally {
@@ -478,10 +487,10 @@ function app() {
           headers: { 'Authorization': `Bearer ${this.getToken()}` }
         });
         if (!res.ok) {
-          const err = await res.json();
+          const err = await this.safeJson(res);
           throw new Error(err.detail || 'Erro');
         }
-        this.uncfgData = await res.json();
+        this.uncfgData = await this.safeJson(res);
       } catch (e) {
         this.showToast(e.message, 'error');
       } finally {
@@ -500,7 +509,7 @@ function app() {
         const res = await fetch(`${API_BASE}/onus/${this.searchOltId}/search?serial=${encodeURIComponent(this.searchSerial)}`, {
           headers: { 'Authorization': `Bearer ${this.getToken()}` }
         });
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Erro na busca');
         this.searchResults = data.results;
       } catch (e) {
@@ -516,7 +525,7 @@ function app() {
     async loadUsers() {
       try {
         const res = await this.apiGet('/auth/users');
-        if (res.ok) this.users = await res.json();
+        if (res.ok) this.users = await this.safeJson(res);
       } catch (e) {}
     },
 
@@ -547,7 +556,7 @@ function app() {
         } else {
           res = await this.apiPost('/auth/users', this.userForm);
         }
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Erro ao salvar');
         this.userModal = false;
         await this.loadUsers();
@@ -578,7 +587,7 @@ function app() {
     async confirmResetPassword() {
       try {
         const res = await this.apiPost(`/auth/users/${this.resetPassUser.id}/reset-password`, { new_password: this.resetPassNew });
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Erro');
         this.resetPassModal = false;
         this.showToast('Senha redefinida!', 'success');
@@ -596,7 +605,7 @@ function app() {
           current_password: this.changePass.current,
           new_password: this.changePass.new
         });
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Erro');
         this.changePass = { current: '', new: '' };
         this.showToast('Senha alterada com sucesso!', 'success');
@@ -609,7 +618,7 @@ function app() {
       try {
         const res = await this.apiGet('/auth/2fa/setup');
         if (!res.ok) throw new Error('Erro ao configurar 2FA');
-        this.twoFAData = await res.json();
+        this.twoFAData = await this.safeJson(res);
         this.twoFAConfirmCode = '';
         this.twoFASetupModal = true;
       } catch (e) {
@@ -620,7 +629,7 @@ function app() {
     async confirmEnable2FA() {
       try {
         const res = await this.apiPost('/auth/2fa/enable', { totp_code: this.twoFAConfirmCode });
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Código inválido');
         this.twoFASetupModal = false;
         this.currentUser.is_2fa_enabled = true;
@@ -634,7 +643,7 @@ function app() {
     async confirmDisable2FA() {
       try {
         const res = await this.apiPost('/auth/2fa/disable', { totp_code: this.disable2FACode });
-        const data = await res.json();
+        const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Código inválido');
         this.disable2FAModal = false;
         this.currentUser.is_2fa_enabled = false;

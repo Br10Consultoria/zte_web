@@ -566,23 +566,57 @@ def parse_onu_baseinfo(output: str) -> List[Dict]:
     """
     Parseia: show gpon onu baseinfo gpon-olt_1/2/2
     Extrai serial, modelo, estado de cada ONU.
+
+    Formato real ZTE C320 (com prefixo gpon-onu_):
+      gpon-onu_1/1/1:1    ZTE-F660    sn      SN:TPLGBDC90DD8         ready
+      gpon-onu_1/2/2:85   ZTE-F660    sn      SN:ZTEGC1234567         working
+
+    Formato alternativo (sem prefixo):
+      1/2/2:85  ITBS0DC456AC  ZTE-F660  enable  working
     """
     onus = []
     for line in output.split('\n'):
-        line = line.strip()
-        # Formato: 1/2/2:85  ITBS0DC456AC  ZTE-F660  enable  working
-        m = re.match(
-            r'^(\d+/\d+(?:/\d+)?:\d+)\s+(\S+)\s+(\S+)\s+(enable|disable)\s*(\S*)',
-            line
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+
+        # Formato 1: com prefixo gpon-onu_
+        # gpon-onu_1/1/1:1    ZTE-F660    sn      SN:TPLGBDC90DD8         ready
+        m1 = re.match(
+            r'^gpon-onu_(\d+/\d+(?:/\d+)?:\d+)\s+(\S+)\s+\S+\s+(\S+)\s*(\S*)',
+            line_stripped
         )
-        if m and ':' in m.group(1):
+        if m1:
+            onu_index = m1.group(1)
+            model     = m1.group(2)
+            serial    = m1.group(3)
+            state     = m1.group(4) if m1.group(4) else "unknown"
+            # Remove prefixo SN: do serial se presente
+            if serial.upper().startswith("SN:"):
+                serial = serial[3:]
             onus.append({
-                "onu_index":   m.group(1),
-                "serial":      m.group(2),
-                "model":       m.group(3),
-                "admin_state": m.group(4),
-                "oper_state":  m.group(5) if m.group(5) else "unknown",
+                "onu_index":   onu_index,
+                "serial":      serial,
+                "model":       model,
+                "admin_state": "enable",
+                "oper_state":  state,
             })
+            continue
+
+        # Formato 2: sem prefixo — 1/2/2:85  ITBS0DC456AC  ZTE-F660  enable  working
+        m2 = re.match(
+            r'^(\d+/\d+(?:/\d+)?:\d+)\s+(\S+)\s+(\S+)\s+(enable|disable)\s*(\S*)',
+            line_stripped
+        )
+        if m2 and ':' in m2.group(1):
+            onus.append({
+                "onu_index":   m2.group(1),
+                "serial":      m2.group(2),
+                "model":       m2.group(3),
+                "admin_state": m2.group(4),
+                "oper_state":  m2.group(5) if m2.group(5) else "unknown",
+            })
+
     _log("debug", f"[PARSER] parse_onu_baseinfo: {len(onus)} ONUs")
     return onus
 
