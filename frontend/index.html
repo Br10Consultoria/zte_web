@@ -332,25 +332,29 @@
         </div>
 
         <!-- Ports Panel -->
-        <div x-show="selectedOLTPorts" class="card mt-4">
+        <div x-show="selectedOLTPorts !== null" class="card mt-4">
           <div class="card-header flex items-center justify-between">
             <span style="color:#e2e8f0;font-weight:600">
               <i class="fas fa-ethernet mr-2" style="color:#a78bfa"></i>
               Portas PON - <span x-text="selectedOLTForPorts ? selectedOLTForPorts.name : ''"></span>
+              <span x-show="selectedOLTPorts" style="color:#94a3b8;font-weight:400" x-text="' (' + (selectedOLTPorts ? selectedOLTPorts.length : 0) + ' portas)'"></span>
             </span>
             <button @click="selectedOLTPorts=null" class="btn btn-secondary btn-sm"><i class="fas fa-times"></i></button>
           </div>
           <div class="table-container">
             <table>
-              <thead><tr><th>Interface</th><th>Slot</th><th>PON</th><th>Tipo</th><th>Status</th><th>ONUs</th><th>Ações</th></tr></thead>
+              <thead><tr><th>Interface</th><th>Slot</th><th>Card</th><th>PON</th><th>Tipo</th><th>Status</th><th>ONUs</th><th>Ações</th></tr></thead>
                <tbody>
                  <template x-for="p in selectedOLTPorts" :key="p.id">
                    <tr>
-                     <td><code x-text="'gpon-olt_'+p.slot+'/'+p.pon" style="color:#60a5fa"></code></td>
+                     <td><code x-text="'gpon-olt_'+p.slot+'/'+(p.card||1)+'/'+p.pon" style="color:#60a5fa"></code></td>
                      <td x-text="p.slot"></td>
+                     <td x-text="p.card || 1"></td>
                      <td x-text="p.pon"></td>
-                    <td><span class="badge badge-blue" x-text="p.port_type.toUpperCase()"></span></td>
-                    <td><span :class="p.status==='online'?'badge badge-green':'badge badge-gray'" x-text="p.status"></span></td>
+                    <td><span class="badge badge-blue" x-text="p.port_type ? p.port_type.toUpperCase() : 'GPON'"></span></td>
+                    <td>
+                      <span :class="p.status==='online'?'badge badge-green':(p.status==='active'?'badge badge-blue':'badge badge-gray')" x-text="p.status"></span>
+                    </td>
                     <td x-text="p.onu_count"></td>
                     <td>
                       <button @click="openONUsByPort(selectedOLTForPorts, p)" class="btn btn-primary btn-sm">
@@ -360,7 +364,7 @@
                   </tr>
                 </template>
                 <tr x-show="!selectedOLTPorts || selectedOLTPorts.length === 0">
-                  <td colspan="6" class="text-center py-3" style="color:#64748b">Nenhuma porta descoberta. Execute a descoberta primeiro.</td>
+                  <td colspan="8" class="text-center py-3" style="color:#64748b">Nenhuma porta descoberta. Execute a descoberta primeiro.</td>
                 </tr>
               </tbody>
             </table>
@@ -382,7 +386,7 @@
             <select x-model="onuFilter.port_id" class="input-field" style="width:140px" :disabled="!onuFilter.olt_id">
               <option value="">Selecione a PON</option>
               <template x-for="p in filteredPorts" :key="p.id">
-                <option :value="p.id + '|' + p.slot + '|' + p.pon" x-text="'gpon-olt_'+p.slot+'/'+p.pon"></option>
+                <option :value="p.id + '|' + p.slot + '|' + (p.card||1) + '|' + p.pon" x-text="'gpon-olt_'+p.slot+'/'+(p.card||1)+'/'+p.pon+' ('+p.onu_count+' ONUs)'" ></option>
               </template>
             </select>
             <button @click="loadONUStatus(false)" class="btn btn-primary" :disabled="!onuFilter.port_id">
@@ -441,30 +445,27 @@
             <table>
               <thead>
                 <tr>
-                  <th>Índice ONU</th><th>Admin</th><th>Estado</th><th>Última Queda</th><th>RX OLT</th><th>Status RX</th><th>Ações</th>
+                  <th>Índice ONU</th><th>Serial</th><th>Tipo</th><th>Descrição</th><th>Admin</th><th>Estado</th><th>Última Queda</th><th>RX OLT</th><th>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 <template x-for="onu in filteredONUs" :key="onu.onu_index">
                   <tr :class="onu.oper_state === 'working' ? 'onu-row-online' : onu.oper_state === 'disable' ? 'onu-row-offline' : 'onu-row-warning'">
                     <td style="color:#e2e8f0;font-weight:600;font-family:monospace" x-text="onu.onu_index"></td>
+                    <td style="font-family:monospace;color:#fbbf24" x-text="onu.serial || '-'"></td>
+                    <td style="color:#94a3b8" x-text="onu.onu_type || '-'"></td>
+                    <td style="color:#94a3b8;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="onu.description" x-text="onu.description || '-'"></td>
                     <td><span :class="onu.admin_state === 'enable' ? 'badge badge-green' : 'badge badge-red'" x-text="onu.admin_state"></span></td>
                     <td>
                       <span :class="onu.oper_state === 'working' ? 'badge badge-green' : onu.oper_state === 'disable' ? 'badge badge-red' : 'badge badge-yellow'" x-text="onu.oper_state"></span>
                     </td>
                     <td>
-                      <span x-show="onu.last_down_cause" :class="onu.last_down_cause === 'LOS' || onu.last_down_cause === 'LOF' ? 'badge badge-red' : onu.last_down_cause === 'DyingGasp' || onu.last_down_cause === 'PowerOff' ? 'badge badge-yellow' : 'badge badge-gray'" x-text="onu.last_down_cause"></span>
+                      <span x-show="onu.last_down_cause" :class="onu.last_down_cause === 'LOSi' || onu.last_down_cause === 'LOS' || onu.last_down_cause === 'LOF' ? 'badge badge-red' : onu.last_down_cause === 'DyingGasp' || onu.last_down_cause === 'PowerOff' ? 'badge badge-yellow' : 'badge badge-gray'" x-text="onu.last_down_cause"></span>
                       <span x-show="!onu.last_down_cause" style="color:#475569">-</span>
                     </td>
                     <td>
                       <span x-show="onu.olt_rx_power !== null && onu.olt_rx_power !== undefined" style="font-family:monospace" x-text="onu.olt_rx_power ? onu.olt_rx_power.toFixed(2) + ' dBm' : '-'"></span>
                       <span x-show="onu.olt_rx_power === null || onu.olt_rx_power === undefined" style="color:#475569">-</span>
-                    </td>
-                    <td>
-                      <span x-show="onu.olt_rx_status">
-                        <span class="power-indicator" :class="'power-' + (onu.olt_rx_status || 'unknown')"></span>
-                        <span class="ml-1" x-text="onu.olt_rx_status || '-'"></span>
-                      </span>
                     </td>
                     <td>
                       <button @click="openONUDetail(onu)" class="btn btn-primary btn-sm"><i class="fas fa-info-circle mr-1"></i>Detalhes</button>
@@ -795,14 +796,39 @@
 
         <!-- Tabs -->
         <div class="flex gap-1 mb-4 flex-wrap">
+          <button @click="detailTab='info'" :class="detailTab==='info'?'tab-btn active':'tab-btn'">Info Geral</button>
           <button @click="detailTab='status'" :class="detailTab==='status'?'tab-btn active':'tab-btn'">Estado</button>
-          <button @click="detailTab='detail'" :class="detailTab==='detail'?'tab-btn active':'tab-btn'">Detalhes</button>
           <button @click="detailTab='power'" :class="detailTab==='power'?'tab-btn active':'tab-btn'">Potência</button>
-          <button @click="detailTab='distance'" :class="detailTab==='distance'?'tab-btn active':'tab-btn'">Distância</button>
+          <button @click="detailTab='history'" :class="detailTab==='history'?'tab-btn active':'tab-btn'">Histórico</button>
           <button @click="detailTab='wan'" :class="detailTab==='wan'?'tab-btn active':'tab-btn'">WAN</button>
           <button @click="detailTab='voip'" :class="detailTab==='voip'?'tab-btn active':'tab-btn'">VoIP</button>
-          <button @click="detailTab='temp'" :class="detailTab==='temp'?'tab-btn active':'tab-btn'">Temperatura</button>
           <button @click="detailTab='firmware'" :class="detailTab==='firmware'?'tab-btn active':'tab-btn'">Firmware</button>
+        </div>
+
+        <!-- Info Geral Tab (show gpon onu detail-info) -->
+        <div x-show="detailTab==='info'">
+          <template x-if="onuDetailData && onuDetailData.detail">
+            <div class="detail-grid">
+              <div class="detail-item"><div class="detail-label">Interface ONU</div><div class="detail-value" style="font-family:monospace;color:#60a5fa" x-text="onuDetailData.onu_interface || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Nome</div><div class="detail-value" x-text="onuDetailData.detail.name || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Tipo</div><div class="detail-value" x-text="onuDetailData.detail.onu_type || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Serial Number</div><div class="detail-value" style="font-family:monospace;color:#fbbf24" x-text="onuDetailData.detail.serial_number || '-'"></div></div>
+              <div class="detail-item" style="grid-column:span 2"><div class="detail-label">Descrição</div><div class="detail-value" style="color:#94a3b8" x-text="onuDetailData.detail.description || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Admin State</div><div class="detail-value"><span :class="onuDetailData.detail.admin_state==='enable'?'badge badge-green':'badge badge-red'" x-text="onuDetailData.detail.admin_state || '-'"></span></div></div>
+              <div class="detail-item"><div class="detail-label">Phase State</div><div class="detail-value"><span :class="onuDetailData.detail.phase_state==='working'?'badge badge-green':'badge badge-yellow'" x-text="onuDetailData.detail.phase_state || '-'"></span></div></div>
+              <div class="detail-item"><div class="detail-label">Config State</div><div class="detail-value"><span :class="onuDetailData.detail.config_state==='success'?'badge badge-green':'badge badge-red'" x-text="onuDetailData.detail.config_state || '-'"></span></div></div>
+              <div class="detail-item"><div class="detail-label">ONU Status</div><div class="detail-value" x-text="onuDetailData.detail.onu_status || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Distância</div><div class="detail-value" style="font-family:monospace;color:#4ade80" x-text="onuDetailData.detail.distance ? onuDetailData.detail.distance + ' m' : '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Tempo Online</div><div class="detail-value" x-text="onuDetailData.detail.online_duration || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Modo Auth</div><div class="detail-value" x-text="onuDetailData.detail.auth_mode || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Canal</div><div class="detail-value" x-text="onuDetailData.detail.current_channel || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Line Profile</div><div class="detail-value" x-text="onuDetailData.detail.line_profile || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">Service Profile</div><div class="detail-value" x-text="onuDetailData.detail.service_profile || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">DBA Mode</div><div class="detail-value" x-text="onuDetailData.detail.dba_mode || '-'"></div></div>
+              <div class="detail-item"><div class="detail-label">FEC</div><div class="detail-value" x-text="onuDetailData.detail.fec || '-'"></div></div>
+            </div>
+          </template>
+          <div x-show="!onuDetailData || !onuDetailData.detail" style="color:#64748b">Dados não disponíveis.</div>
         </div>
 
         <!-- Status Tab -->
@@ -830,20 +856,26 @@
           <div x-show="!onuDetailData || !onuDetailData.status" style="color:#64748b">Dados não disponíveis.</div>
         </div>
 
-        <!-- Detail Tab -->
-        <div x-show="detailTab==='detail'">
-          <template x-if="onuDetailData && onuDetailData.detail">
-            <div class="detail-grid">
-              <div class="detail-item"><div class="detail-label">Serial Number</div><div class="detail-value" style="font-family:monospace" x-text="onuDetailData.detail.serial_number || '-'"></div></div>
-              <div class="detail-item"><div class="detail-label">Vendor ID</div><div class="detail-value" x-text="onuDetailData.detail.vendor_id || '-'"></div></div>
-              <div class="detail-item"><div class="detail-label">Tipo ONU</div><div class="detail-value" x-text="onuDetailData.detail.onu_type || '-'"></div></div>
-              <div class="detail-item"><div class="detail-label">Run State</div><div class="detail-value" x-text="onuDetailData.detail.run_state || '-'"></div></div>
-              <div class="detail-item"><div class="detail-label">OMCI State</div><div class="detail-value" x-text="onuDetailData.detail.omci_state || '-'"></div></div>
-              <div class="detail-item"><div class="detail-label">Tempo Online</div><div class="detail-value" x-text="onuDetailData.detail.online_time || '-'"></div></div>
-              <div class="detail-item"><div class="detail-label">FEC</div><div class="detail-value" x-text="onuDetailData.detail.fec || '-'"></div></div>
-              <div class="detail-item"><div class="detail-label">DBA</div><div class="detail-value" x-text="onuDetailData.detail.dba || '-'"></div></div>
+        <!-- Histórico Tab -->
+        <div x-show="detailTab==='history'">
+          <template x-if="onuDetailData && onuDetailData.detail && onuDetailData.detail.history && onuDetailData.detail.history.length > 0">
+            <div class="table-container">
+              <table>
+                <thead><tr><th>#</th><th>Data/Hora Auth</th><th>Data/Hora Offline</th><th>Causa</th></tr></thead>
+                <tbody>
+                  <template x-for="(h, i) in onuDetailData.detail.history" :key="i">
+                    <tr>
+                      <td style="color:#64748b" x-text="i+1"></td>
+                      <td style="font-family:monospace;color:#4ade80" x-text="h.auth_time || '-'"></td>
+                      <td style="font-family:monospace;color:#f87171" x-text="h.offline_time || '-'"></td>
+                      <td><span :class="h.cause==='LOSi'||h.cause==='LOS'||h.cause==='LOF'?'badge badge-red':h.cause==='DyingGasp'||h.cause==='PowerOff'?'badge badge-yellow':'badge badge-gray'" x-text="h.cause || '-'"></span></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
             </div>
           </template>
+          <div x-show="!onuDetailData || !onuDetailData.detail || !onuDetailData.detail.history || onuDetailData.detail.history.length === 0" style="color:#64748b">Nenhum histórico de queda encontrado.</div>
         </div>
 
         <!-- Power Tab -->

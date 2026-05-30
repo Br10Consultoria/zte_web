@@ -214,14 +214,18 @@ def _detect_card_via_ssh(ip: str, port: int, username: str, password: str,
     """
     Detecta o card (subslot) real de uma porta PON via SSH/Telnet.
     Tenta cards 1, 2, 3, 4 e retorna o primeiro que responder.
+    Nota: _olt_iface definida localmente para evitar import circular.
     """
+    def _local_olt_iface(s: int, c: int, p: int) -> str:
+        return f"gpon-olt_{s}/{c}/{p}"
+
     try:
-        from .olt_client import get_olt_client, _olt_iface, OLTConnectionError
+        from .olt_client import get_olt_client, OLTConnectionError
         client = get_olt_client(ip, port, username, password, protocol)
         client.connect()
 
         for card in [1, 2, 3, 4]:
-            iface = _olt_iface(slot, card, pon)
+            iface = _local_olt_iface(slot, card, pon)
             try:
                 out = client.execute_command(f"show gpon onu state {iface}", timeout=8)
                 # Se não retornou erro, essa interface existe
