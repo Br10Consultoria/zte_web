@@ -180,10 +180,15 @@ systemctl enable zte-titan --quiet
 ok "Serviço systemd criado e habilitado"
 
 # ============================================================
-# 9. INICIAR O SERVIÇO
+# 9. INICIAR / REINICIAR O SERVIÇO
 # ============================================================
-info "Iniciando o serviço ZTE Titan Manager..."
-systemctl start zte-titan
+info "Iniciando/reiniciando o serviço ZTE Titan Manager..."
+if systemctl is-active --quiet zte-titan; then
+    info "Serviço já rodando — reiniciando para aplicar atualizações..."
+    systemctl restart zte-titan
+else
+    systemctl start zte-titan
+fi
 sleep 4
 
 if systemctl is-active --quiet zte-titan; then
