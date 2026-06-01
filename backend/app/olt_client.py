@@ -16,9 +16,19 @@ import re
 import time
 import socket
 import logging
+import warnings
 import paramiko
 from typing import Optional, List, Dict, Any, Tuple
 from .config import settings
+
+# telnetlib está disponível no Python 3.11 (deprecado apenas no 3.13)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    try:
+        import telnetlib as _telnetlib
+        _TELNETLIB_OK = True
+    except ImportError:
+        _TELNETLIB_OK = False
 
 # ============================================================
 # LOGGER DETALHADO
@@ -32,11 +42,19 @@ def _log(level: str, msg: str):
 
 
 # ============================================================
-# Implementação própria de Telnet (telnetlib removido no Python 3.13)
+# Wrapper Telnet: usa telnetlib nativo (Python 3.11) ou socket puro (3.13+)
 # ============================================================
 class SimpleTelnet:
-    """Cliente Telnet simples via socket puro, compatível com Python 3.13+."""
+    """
+    Cliente Telnet que usa telnetlib nativo do Python quando disponível.
+    O telnetlib lida automaticamente com todas as negociações IAC,
+    o que é essencial para equipamentos como o ZTE C600/C610 que enviam
+    múltiplas negociações logo após a conexão TCP.
 
+    Fallback para socket puro quando telnetlib não está disponível (Python 3.13+).
+    """
+
+    # Constantes IAC (usadas apenas no fallback socket puro)
     IAC  = bytes([255])
     DONT = bytes([254])
     DO   = bytes([253])
@@ -47,14 +65,22 @@ class SimpleTelnet:
         self.host = host
         self.port = port
         self.timeout = timeout
-        self.sock = None
+        self._tn = None    # instância telnetlib.Telnet
+        self.sock = None   # socket puro (fallback)
         self._buf = b""
+        self._use_telnetlib = _TELNETLIB_OK
 
     def open(self):
         _log("info", f"[TELNET] Conectando a {self.host}:{self.port}")
-        self.sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
-        self.sock.settimeout(self.timeout)
-        _log("info", f"[TELNET] Conexão TCP estabelecida com {self.host}:{self.port}")
+        if self._use_telnetlib:
+            # telnetlib lida automaticamente com negociações IAC
+            self._tn = _telnetlib.Telnet()
+            self._tn.open(self.host, self.port, timeout=self.timeout)
+            _log("info", f"[TELNET] Conexão TCP estabelecida com {self.host}:{self.port} (via telnetlib)")
+        else:
+            self.sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
+            self.sock.settimeout(self.timeout)
+            _log("info", f"[TELNET] Conexão TCP estabelecida com {self.host}:{self.port} (via socket)")
 
     def _recv_raw(self, size: int = 4096) -> bytes:
         try:
@@ -64,16 +90,14 @@ class SimpleTelnet:
 
     def _process_iac(self, data: bytes) -> bytes:
         """
-        Remove e responde às negociações IAC do stream Telnet.
-        O ZTE C600/C610 envia múltiplas negociações IAC no início da conexão.
-        Responder corretamente evita o 'Connection reset by peer'.
+        Processa negociações IAC (usado apenas no modo socket puro).
+        Responde a todas as negociações DO/WILL/DONT/WONT.
         """
         out = b""
         i = 0
         while i < len(data):
             if data[i:i+1] == self.IAC:
                 if i + 1 < len(data) and data[i+1:i+2] == self.IAC:
-                    # IAC IAC = byte literal 0xFF
                     out += self.IAC
                     i += 2
                 elif i + 2 < len(data):
@@ -81,16 +105,12 @@ class SimpleTelnet:
                     opt = data[i+2:i+3]
                     try:
                         if cmd == self.DO:
-                            # Servidor pede que cliente faça algo: recusamos
                             self.sock.sendall(self.IAC + self.WONT + opt)
                         elif cmd == self.WILL:
-                            # Servidor vai fazer algo: não queremos
                             self.sock.sendall(self.IAC + self.DONT + opt)
                         elif cmd == self.DONT:
-                            # Servidor pede que paremos: confirmamos
                             self.sock.sendall(self.IAC + self.WONT + opt)
                         elif cmd == self.WONT:
-                            # Servidor não vai fazer algo: confirmamos
                             self.sock.sendall(self.IAC + self.DONT + opt)
                     except Exception:
                         pass
@@ -103,6 +123,12 @@ class SimpleTelnet:
         return out
 
     def read_until(self, expected: bytes, timeout: int = 15) -> bytes:
+        if self._use_telnetlib and self._tn:
+            try:
+                return self._tn.read_until(expected, timeout=timeout)
+            except EOFError:
+                return b""
+        # Fallback socket puro
         deadline = time.time() + timeout
         while time.time() < deadline:
             raw = self._recv_raw()
@@ -118,6 +144,12 @@ class SimpleTelnet:
 
     def read_very_eager(self, wait: float = 0.5) -> bytes:
         time.sleep(wait)
+        if self._use_telnetlib and self._tn:
+            try:
+                return self._tn.read_very_eager()
+            except EOFError:
+                return b""
+        # Fallback socket puro
         self.sock.settimeout(0.3)
         try:
             data = b""
@@ -133,11 +165,17 @@ class SimpleTelnet:
             self.sock.settimeout(self.timeout)
 
     def write(self, data: bytes):
-        self.sock.sendall(data)
+        if self._use_telnetlib and self._tn:
+            self._tn.write(data)
+        else:
+            self.sock.sendall(data)
 
     def close(self):
         try:
-            self.sock.close()
+            if self._use_telnetlib and self._tn:
+                self._tn.close()
+            elif self.sock:
+                self.sock.close()
         except Exception:
             pass
 
