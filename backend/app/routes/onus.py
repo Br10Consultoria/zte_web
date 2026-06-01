@@ -2,6 +2,7 @@
 Rotas de consulta de ONUs.
 Usa formato ZTE Titan: gpon-olt_SLOT/CARD/PON e gpon-onu_SLOT/CARD/PON:ID
 """
+import re
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -108,15 +109,33 @@ def get_pon_status(
         except Exception as rx_err:
             logger.warning(f"[PON_STATUS] Falha ao coletar RX OLT: {rx_err}")
 
-        # Detail-info em batch (description + online_duration)
+        # Detail-info individual por ONU (description + online_duration)
+        # Executado na mesma sessão Telnet já aberta, sem reconectar
         detail_map = {}
-        try:
-            logger.info(f"[PON_STATUS] Executando: show gpon onu detail-info {iface}")
-            detail_out = client.execute_command(f"show gpon onu detail-info {iface}", timeout=60)
-            detail_map = parse_onu_detail_batch(detail_out)
-            logger.info(f"[PON_STATUS] Detail-info coletado para {len(detail_map)} ONUs")
-        except Exception as det_err:
-            logger.warning(f"[PON_STATUS] Falha ao coletar detail-info: {det_err}")
+        MAX_DETAIL = 60  # limite para portas com muitas ONUs
+        onus_for_detail = onus[:MAX_DETAIL]
+        logger.info(f"[PON_STATUS] Coletando detail-info para {len(onus_for_detail)} ONUs")
+        for onu_item in onus_for_detail:
+            idx = onu_item["onu_index"]  # ex: 1/1/12:1
+            onu_iface = f"gpon-onu_{idx}"  # ex: gpon-onu_1/1/12:1
+            try:
+                det_out = client.execute_command(
+                    f"show gpon onu detail-info {onu_iface}", timeout=10
+                )
+                # Extrai description e online_duration do output individual
+                desc = ""
+                m_desc = re.search(r'Description\s*:\s*(\S[^\n]*)', det_out)
+                if m_desc:
+                    desc = m_desc.group(1).strip()
+                uptime = ""
+                m_up = re.search(r'Online Duration\s*:\s*(\S[^\n]*)', det_out)
+                if m_up:
+                    uptime = m_up.group(1).strip()
+                detail_map[idx] = {"description": desc, "online_duration": uptime}
+            except Exception as det_err:
+                logger.warning(f"[PON_STATUS] Falha detail-info {onu_iface}: {det_err}")
+                detail_map[idx] = {"description": "", "online_duration": ""}
+        logger.info(f"[PON_STATUS] Detail-info coletado para {len(detail_map)} ONUs")
 
         client.disconnect()
 
