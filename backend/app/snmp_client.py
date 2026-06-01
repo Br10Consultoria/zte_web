@@ -319,12 +319,12 @@ def snmp_discover_pon_ports(host: str, community: str, port: int = 161,
         # slot aqui = número da placa (1=slot1, 2=slot2)
         # Na CLI: gpon-olt_1/1/1 (placa 1, porta 1) e gpon-olt_1/2/1 (placa 2, porta 1)
         pon_ports.append({
-            "rack":      1,       # RACK fixo = 1
-            "slot":      slot,    # número da placa (1 ou 2)
-            "card":      1,       # rack=1, slot=placa → montagem: gpon-olt_1/{slot}/{pon}
+            "rack":      1,
+            "slot":      slot,
+            "card":      slot,   # card = slot da placa (compatível com banco)
             "pon":       pon_num,
             "if_index":  if_index,
-            "if_name":   f"gpon-olt_1/{slot}/{pon_num}",  # Formato correto ZTE
+            "if_name":   f"gpon-olt_1/{slot}/{pon_num}",  # Formato ZTE C320 (padrão)
             "port_type": "gpon",
             "description": val if val else f"OLT-{pon_num}",
             "status":    "unknown",

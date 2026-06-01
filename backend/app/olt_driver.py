@@ -25,14 +25,16 @@ logger = logging.getLogger("olt_driver")
 
 OLT_MODELS = {
     "zte_c320": {
-        "label": "ZTE C320 / C600 / C610 / C620 / C650",
+        "label": "ZTE C320 / C600 / C620 / C650",
         "vendor": "ZTE",
         "series": "C320",
+        # Interface: gpon-olt_1/CARD/PON  |  gpon-onu_1/CARD/PON:ID
     },
     "zte_c300": {
-        "label": "ZTE C300 / C300M / C300T (Titan)",
+        "label": "ZTE C300 / C300M / C300T / C610 (Titan)",
         "vendor": "ZTE",
         "series": "C300",
+        # Interface: gpon_olt-SLOT/CARD/PON  |  gpon_onu-SLOT/CARD/PON:ID
     },
 }
 
@@ -403,9 +405,11 @@ class ZTEC300Driver(OLTDriver):
         return f"show pon power attenuation {onu_iface}"
 
     def cmd_discover_ports(self) -> List[str]:
+        # Na C300/C610, 'show interface gpon_olt' sem iface específica retorna erro.
+        # Usamos 'show gpon onu state' sem argumento para listar todas as ONUs
+        # e depois derivamos as portas a partir dos índices retornados.
         return [
-            "show interface gpon_olt",
-            "show running-config interface gpon_olt",
+            "show gpon onu state",
         ]
 
     def parse_onu_state(self, output: str) -> List[Dict]:
@@ -522,13 +526,31 @@ class ZTEC300Driver(OLTDriver):
 
     def parse_discover_ports(self, output: str) -> List[Dict]:
         """
-        Parseia output de show interface gpon_olt.
-        Formato C300: gpon_olt-SLOT/CARD/PON
+        Parseia output de 'show gpon onu state' (sem argumento) para descobrir portas.
+        O C300/C610 não suporta 'show interface gpon_olt' sem especificar a interface.
+        Extrai as portas únicas a partir dos índices de ONU (SLOT/CARD/PON:ID).
+
+        Também aceita output de 'show interface gpon_olt-X/X/X' com múltiplas interfaces.
         """
         ports = []
         seen = set()
+
         for line in output.split('\n'):
-            # Formato C300: gpon_olt-1/1/1
+            line = line.strip()
+
+            # Extrai porta de índice de ONU: SLOT/CARD/PON:ID
+            m_onu = re.match(r'^(\d+)/(\d+)/(\d+):\d+', line)
+            if m_onu:
+                slot = int(m_onu.group(1))
+                card = int(m_onu.group(2))
+                pon  = int(m_onu.group(3))
+                key  = (slot, card, pon)
+                if key not in seen:
+                    seen.add(key)
+                    ports.append({"slot": slot, "card": card, "pon": pon, "port_type": "gpon"})
+                continue
+
+            # Formato explícito: gpon_olt-SLOT/CARD/PON
             m3 = re.search(r'gpon_olt-(\d+)/(\d+)/(\d+)', line)
             if m3:
                 slot = int(m3.group(1))
@@ -538,27 +560,41 @@ class ZTEC300Driver(OLTDriver):
                 if key not in seen:
                     seen.add(key)
                     ports.append({"slot": slot, "card": card, "pon": pon, "port_type": "gpon"})
-                continue
-            m2 = re.search(r'gpon_olt-(\d+)/(\d+)(?!\s*/)', line)
-            if m2:
-                slot = int(m2.group(1))
-                pon  = int(m2.group(2))
-                key  = (slot, 1, pon)
-                if key not in seen:
-                    seen.add(key)
-                    ports.append({"slot": slot, "card": 1, "pon": pon, "port_type": "gpon"})
+
+        logger.debug(f"[PARSER] parse_discover_ports (C300): {len(ports)} portas")
         return ports
 
     def parse_onu_state_for_discover(self, output: str, slot: int, card: int, pon: int) -> bool:
         """
-        Na C300, show gpon onu state sem interface lista TODAS as ONUs.
-        Verifica se o output contém ONUs da porta específica.
+        Na C300/C610, 'show gpon onu state gpon_olt-S/C/P' retorna:
+          - Cabeçalho + linhas de ONUs: porta válida com ONUs
+          - Apenas cabeçalho (sem ONUs): porta válida mas vazia
+          - Mensagem de erro/invalid: porta não existe
+
+        Aceita a porta se o output não contiver mensagem de erro,
+        mesmo que não haja ONUs (porta pode estar vazia).
         """
-        iface_prefix = f"{slot}/{card}/{pon}:"
-        return any(
-            line.strip().startswith(iface_prefix)
-            for line in output.split('\n')
+        out = output.strip()
+        if not out:
+            return False
+        out_lower = out.lower()
+        # Rejeita se contiver indicadores de erro
+        error_indicators = (
+            "invalid input",
+            "invalid command",
+            "error",
+            "not exist",
+            "no such",
+            "% ",
+            "^\n",
         )
+        if any(ind in out_lower for ind in error_indicators):
+            return False
+        # Aceita se tiver cabeçalho de tabela (OnuIndex) ou linhas de ONU
+        iface_prefix = f"{slot}/{card}/{pon}:"
+        has_onus = any(line.strip().startswith(iface_prefix) for line in out.split('\n'))
+        has_header = "onuindex" in out_lower or "admin state" in out_lower
+        return has_onus or has_header
 
 
 # ============================================================
@@ -585,15 +621,27 @@ def detect_model(login_banner: str) -> str:
     """
     Tenta detectar o modelo da OLT pelo banner de login.
     Retorna a chave do modelo (ex: 'zte_c300') ou 'zte_c320' como padrão.
+
+    Regra principal:
+      - Banner contém "TITAN" ou "C300" ou "C610" → zte_c300
+        (ZTE C610 é da família C300/Titan: usa gpon_olt-SLOT/CARD/PON)
+      - Banner contém "C320" ou "C600" ou "C620" ou "C650" → zte_c320
+        (ZTE C320/C600/C620/C650: usa gpon-olt_1/CARD/PON)
     """
     banner_lower = login_banner.lower()
-    if "c300" in banner_lower or "titan" in banner_lower:
+
+    # Família C300/Titan: C300, C300M, C300T, C610
+    if any(kw in banner_lower for kw in ("titan", "c300", "c610")):
         return "zte_c300"
-    if "c320" in banner_lower or "c600" in banner_lower or "c610" in banner_lower:
+
+    # Família C320: C320, C600, C620, C650
+    if any(kw in banner_lower for kw in ("c320", "c600", "c620", "c650")):
         return "zte_c320"
-    # Tenta detectar pelo formato da interface no output
+
+    # Detecta pelo formato da interface presente no output
     if "gpon_olt-" in login_banner or "gpon_onu-" in login_banner:
         return "zte_c300"
     if "gpon-olt_" in login_banner or "gpon-onu_" in login_banner:
         return "zte_c320"
+
     return "zte_c320"
