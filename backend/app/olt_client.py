@@ -1080,3 +1080,126 @@ def get_onu_full_details(ip: str, port: int, username: str, password: str,
                 client.disconnect()
             except Exception:
                 pass
+
+
+def reboot_onu(ip: str, port: int, username: str, password: str,
+               protocol: str, slot: int, card: int, pon: int,
+               onu_id: int, driver=None) -> Dict:
+    """
+    Reinicia uma ONU específica via Telnet/SSH.
+
+    Sequência de comandos:
+      1. pon-onu-mng gpon-onu_S/C/P:ID  (entra no modo de gerenciamento)
+      2. reboot                           (solicita reboot)
+      3. y                               (confirma)
+
+    Funciona para C320 e C300/Titan (o driver gera a interface correta).
+    """
+    client = None
+    try:
+        if driver is not None:
+            onu_ref = driver.onu_iface(f"{slot}/{card}/{pon}:{onu_id}")
+            cmds = driver.cmd_onu_reboot(onu_ref)
+        else:
+            onu_ref = _onu_iface(slot, card, pon, onu_id)
+            cmds = [f"pon-onu-mng {onu_ref}", "reboot", "y"]
+
+        _log("info", f"[REBOOT] Iniciando reboot de {onu_ref} em {ip}")
+        client = get_olt_client(ip, port, username, password, protocol)
+        client.connect()
+
+        # Passo 1: entrar no modo de gerenciamento
+        _log("info", f"[REBOOT] Executando: {cmds[0]}")
+        out1 = client.execute_command(cmds[0], timeout=10)
+        _log("debug", f"[REBOOT] Resposta: {out1[:200]}")
+
+        # Passo 2: solicitar reboot
+        _log("info", f"[REBOOT] Executando: {cmds[1]}")
+        out2 = client.execute_command(cmds[1], timeout=10)
+        _log("debug", f"[REBOOT] Resposta: {out2[:200]}")
+
+        # Passo 3: confirmar (pode precisar enviar direto sem aguardar prompt)
+        # O C610/C300 exibe: "Confirm to reboot? [yes/no]:"
+        if "confirm" in out2.lower() or "yes/no" in out2.lower() or not out2.strip():
+            _log("info", f"[REBOOT] Confirmando com 'y'")
+            # Envia 'y' diretamente no socket/telnet sem aguardar prompt completo
+            if hasattr(client, 'tn'):
+                client.tn.write(b"y\n")
+                import time as _time
+                _time.sleep(1.0)
+                client.tn.read_very_eager(wait=0.5)
+            elif hasattr(client, 'channel'):
+                client.channel.send("y\n")
+                import time as _time
+                _time.sleep(1.0)
+            out3 = "y"
+        else:
+            out3 = client.execute_command(cmds[2], timeout=10)
+
+        _log("info", f"[REBOOT] Reboot enviado com sucesso para {onu_ref}")
+        return {
+            "success": True,
+            "onu_interface": onu_ref,
+            "message": f"Reboot enviado para {onu_ref}. A ONU será reiniciada em instantes.",
+        }
+
+    except OLTConnectionError as e:
+        raise
+    except Exception as e:
+        _log("error", f"[REBOOT] Erro ao reiniciar {onu_ref}: {e}")
+        raise OLTConnectionError(f"Erro ao reiniciar ONU: {str(e)}")
+    finally:
+        if client:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+
+
+def get_onu_traffic(ip: str, port: int, username: str, password: str,
+                    protocol: str, slot: int, card: int, pon: int,
+                    onu_id: int, driver=None) -> Dict:
+    """
+    Coleta tráfego em tempo real de uma ONU via 'show interface gpon_onu-S/C/P:ID'.
+    Retorna rx_bps, tx_bps, rx_pps, tx_pps, utilização e totais.
+    """
+    client = None
+    try:
+        if driver is not None:
+            onu_ref = driver.onu_iface(f"{slot}/{card}/{pon}:{onu_id}")
+            cmd = driver.cmd_onu_traffic(onu_ref)
+        else:
+            onu_ref = _onu_iface(slot, card, pon, onu_id)
+            cmd = f"show interface {onu_ref}"
+
+        _log("info", f"[TRAFFIC] Coletando tráfego de {onu_ref}")
+        client = get_olt_client(ip, port, username, password, protocol)
+        client.connect()
+        out = client.execute_command(cmd, timeout=15)
+        _log("debug", f"[TRAFFIC] Output bruto ({len(out)} chars): {out[:500]}")
+
+        if driver is not None:
+            traffic = driver.parse_onu_traffic(out)
+        else:
+            from .olt_driver import _parse_onu_traffic_common
+            traffic = _parse_onu_traffic_common(out)
+
+        _log("info", f"[TRAFFIC] Tráfego coletado: rx={traffic.get('rx_bps')} Bps, tx={traffic.get('tx_bps')} Bps")
+        return {
+            "success": True,
+            "onu_interface": onu_ref,
+            "traffic": traffic,
+            "raw": out,
+        }
+
+    except OLTConnectionError:
+        raise
+    except Exception as e:
+        _log("error", f"[TRAFFIC] Erro ao coletar tráfego: {e}")
+        raise OLTConnectionError(f"Erro ao coletar tráfego da ONU: {str(e)}")
+    finally:
+        if client:
+            try:
+                client.disconnect()
+            except Exception:
+                pass

@@ -26,7 +26,8 @@ from ..models import User, OLT, OLTPort
 from ..auth import get_current_user
 from ..olt_client import (
     get_olt_client, OLTConnectionError,
-    parse_onu_power, parse_onu_detail, get_onu_full_details
+    parse_onu_power, parse_onu_detail, get_onu_full_details,
+    reboot_onu, get_onu_traffic
 )
 from ..olt_driver import get_driver
 from ..redis_client import cache
@@ -330,6 +331,76 @@ def search_onu(
         raise HTTPException(status_code=503, detail=str(e))
 
     return {"results": results, "total": len(results), "serial_searched": serial}
+
+
+@router.post("/{olt_id}/pon/{slot}/{card}/{pon}/onu/{onu_id}/reboot")
+def onu_reboot(
+    olt_id: int,
+    slot: int,
+    card: int,
+    pon: int,
+    onu_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reinicia uma ONU específica.
+    Funciona para ZTE C320 e ZTE C300/C610 (Titan).
+    Requer perfil admin.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem reiniciar ONUs")
+
+    olt = _get_olt_or_404(olt_id, db)
+    driver = get_driver(olt.olt_model)
+    onu_ref = driver.onu_iface(f"{slot}/{card}/{pon}:{onu_id}")
+    logger.info(f"[REBOOT] Solicitado por {current_user.username}: {onu_ref} em {olt.ip}")
+
+    try:
+        result = reboot_onu(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol,
+            slot, card, pon, onu_id, driver=driver
+        )
+        return result
+    except OLTConnectionError as e:
+        logger.error(f"[REBOOT] Erro de conexão: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"[REBOOT] Erro inesperado: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+
+@router.get("/{olt_id}/pon/{slot}/{card}/{pon}/onu/{onu_id}/traffic")
+def get_onu_traffic_endpoint(
+    olt_id: int,
+    slot: int,
+    card: int,
+    pon: int,
+    onu_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna tráfego em tempo real de uma ONU (rx/tx Bps, pps, utilização).
+    Sem cache — sempre consulta a OLT diretamente para dados em tempo real.
+    """
+    olt = _get_olt_or_404(olt_id, db)
+    driver = get_driver(olt.olt_model)
+
+    try:
+        result = get_onu_traffic(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol,
+            slot, card, pon, onu_id, driver=driver
+        )
+        result["olt_id"] = olt_id
+        result["last_updated"] = _now_iso()
+        return result
+    except OLTConnectionError as e:
+        logger.error(f"[TRAFFIC] Erro de conexão: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"[TRAFFIC] Erro inesperado: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 
 @router.delete("/{olt_id}/cache")

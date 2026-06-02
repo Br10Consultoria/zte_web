@@ -49,6 +49,13 @@ function app() {
     onuDetailContext: null,
     detailTab: 'status',
 
+    // ONU Traffic
+    onuTrafficData: null,
+    onuTrafficLoading: false,
+    trafficAutoRefresh: false,
+    trafficAutoRefreshTimer: null,
+    trafficHistory: [],  // amostras para o gráfico
+
     // Unconfigured
     uncfgOltId: '',
     uncfgData: null,
@@ -448,6 +455,14 @@ function app() {
       return list;
     },
 
+    closeONUDetail() {
+      this.onuDetailModal = false;
+      // Para auto-refresh de tráfego e limpa histórico
+      if (this.trafficAutoRefresh) this.toggleTrafficAutoRefresh();
+      this.onuTrafficData = null;
+      this.trafficHistory = [];
+    },
+
     async openONUDetail(onu) {
       if (!this.onuFilter.port_id) return;
       // Formato: portId|slot|card|pon
@@ -496,6 +511,149 @@ function app() {
 
     async refreshONUDetail() {
       await this.fetchONUDetail(true);
+    },
+
+    async rebootONU() {
+      if (!this.onuDetailContext) return;
+      const { oltId, slot, card, pon, onuId } = this.onuDetailContext;
+      const iface = this.onuDetailData ? (this.onuDetailData.onu_interface || `${slot}/${card}/${pon}:${onuId}`) : `${slot}/${card}/${pon}:${onuId}`;
+      if (!confirm(`Confirmar reboot da ONU ${iface}?\n\nA ONU ficará offline por cerca de 60 segundos.`)) return;
+      try {
+        const res = await fetch(`${API_BASE}/onus/${oltId}/pon/${slot}/${card}/${pon}/onu/${onuId}/reboot`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${this.getToken()}` }
+        });
+        const data = await this.safeJson(res);
+        if (!res.ok) throw new Error(data.detail || 'Erro ao reiniciar ONU');
+        this.showToast(`✅ ${data.message || 'Reboot enviado com sucesso!'}`, 'success');
+      } catch (e) {
+        this.showToast(`Erro: ${e.message}`, 'error');
+      }
+    },
+
+    async loadONUTraffic() {
+      if (!this.onuDetailContext) return;
+      const { oltId, slot, card, pon, onuId } = this.onuDetailContext;
+      this.onuTrafficLoading = true;
+      try {
+        const res = await fetch(`${API_BASE}/onus/${oltId}/pon/${slot}/${card}/${pon}/onu/${onuId}/traffic`, {
+          headers: { 'Authorization': `Bearer ${this.getToken()}` }
+        });
+        const data = await this.safeJson(res);
+        if (!res.ok) throw new Error(data.detail || 'Erro ao consultar tráfego');
+        this.onuTrafficData = data;
+        // Adiciona amostra ao histórico para o gráfico
+        if (data.traffic) {
+          const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          this.trafficHistory.push({
+            time: now,
+            rx: data.traffic.rx_bps || 0,
+            tx: data.traffic.tx_bps || 0,
+          });
+          if (this.trafficHistory.length > 20) this.trafficHistory.shift();
+          this.$nextTick(() => this.renderTrafficChart());
+        }
+      } catch (e) {
+        this.showToast(`Erro ao carregar tráfego: ${e.message}`, 'error');
+      } finally {
+        this.onuTrafficLoading = false;
+      }
+    },
+
+    toggleTrafficAutoRefresh() {
+      this.trafficAutoRefresh = !this.trafficAutoRefresh;
+      if (this.trafficAutoRefresh) {
+        this.loadONUTraffic();
+        this.trafficAutoRefreshTimer = setInterval(() => {
+          if (this.detailTab === 'traffic' && this.onuDetailModal) {
+            this.loadONUTraffic();
+          } else {
+            this.toggleTrafficAutoRefresh(); // para se sair da aba
+          }
+        }, 5000);
+      } else {
+        if (this.trafficAutoRefreshTimer) {
+          clearInterval(this.trafficAutoRefreshTimer);
+          this.trafficAutoRefreshTimer = null;
+        }
+      }
+    },
+
+    renderTrafficChart() {
+      const canvas = document.getElementById('trafficChart');
+      if (!canvas || this.trafficHistory.length < 2) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.offsetWidth || 500;
+      const H = 120;
+      canvas.width = W;
+      canvas.height = H;
+      ctx.clearRect(0, 0, W, H);
+
+      const rxVals = this.trafficHistory.map(s => s.rx);
+      const txVals = this.trafficHistory.map(s => s.tx);
+      const maxVal = Math.max(...rxVals, ...txVals, 1);
+      const n = this.trafficHistory.length;
+      const padL = 0, padR = 0, padT = 8, padB = 20;
+      const plotW = W - padL - padR;
+      const plotH = H - padT - padB;
+
+      const xPos = (i) => padL + (i / (n - 1)) * plotW;
+      const yPos = (v) => padT + plotH - (v / maxVal) * plotH;
+
+      const drawLine = (vals, color, fillColor) => {
+        ctx.beginPath();
+        vals.forEach((v, i) => {
+          const x = xPos(i), y = yPos(v);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Fill
+        ctx.lineTo(xPos(n - 1), H - padB);
+        ctx.lineTo(xPos(0), H - padB);
+        ctx.closePath();
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+      };
+
+      drawLine(rxVals, '#3fb950', 'rgba(63,185,80,0.15)');
+      drawLine(txVals, '#58a6ff', 'rgba(88,166,255,0.15)');
+
+      // Labels de tempo (início e fim)
+      ctx.fillStyle = 'rgba(139,148,158,0.8)';
+      ctx.font = '10px monospace';
+      ctx.fillText(this.trafficHistory[0].time, padL + 2, H - 4);
+      const lastLabel = this.trafficHistory[n - 1].time;
+      ctx.fillText(lastLabel, W - ctx.measureText(lastLabel).width - 2, H - 4);
+
+      // Legenda
+      ctx.fillStyle = '#3fb950';
+      ctx.fillRect(padL + 2, padT, 10, 3);
+      ctx.fillStyle = 'rgba(139,148,158,0.8)';
+      ctx.font = '9px sans-serif';
+      ctx.fillText('RX', padL + 15, padT + 4);
+      ctx.fillStyle = '#58a6ff';
+      ctx.fillRect(padL + 40, padT, 10, 3);
+      ctx.fillStyle = 'rgba(139,148,158,0.8)';
+      ctx.fillText('TX', padL + 53, padT + 4);
+    },
+
+    formatBps(bps) {
+      if (bps === null || bps === undefined) return '—';
+      if (bps >= 1073741824) return (bps / 1073741824).toFixed(2) + ' Gbps';
+      if (bps >= 1048576)    return (bps / 1048576).toFixed(2) + ' Mbps';
+      if (bps >= 1024)       return (bps / 1024).toFixed(1) + ' Kbps';
+      return bps + ' bps';
+    },
+
+    formatBytes(bytes) {
+      if (bytes === null || bytes === undefined) return '—';
+      if (bytes >= 1099511627776) return (bytes / 1099511627776).toFixed(2) + ' TB';
+      if (bytes >= 1073741824)    return (bytes / 1073741824).toFixed(2) + ' GB';
+      if (bytes >= 1048576)       return (bytes / 1048576).toFixed(1) + ' MB';
+      if (bytes >= 1024)          return (bytes / 1024).toFixed(1) + ' KB';
+      return bytes + ' B';
     },
 
     // ============================================================

@@ -700,48 +700,59 @@
         </button>
       </div>
 
-      <!-- Legenda de Estados -->
-      <div class="sidebar-legend" x-show="!sidebarCollapsed">
-        <div class="legend-title"><i class="fas fa-circle-info mr-1"></i> Estados ONU</div>
-        <div class="legend-row" title="Cliente online e funcionando">
-          <span class="legend-dot legend-dot-green"></span>
-          <span class="legend-label">working</span>
-          <span class="legend-desc">Online</span>
+      <!-- Legenda de Estados (retrátil) -->
+      <div x-show="!sidebarCollapsed" x-data="{ legendOpen: false }">
+        <!-- Botão para expandir/retrair -->
+        <div @click="legendOpen = !legendOpen"
+             style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;cursor:pointer;border-top:1px solid var(--border);margin-top:8px;user-select:none"
+             :style="legendOpen ? 'background:var(--surface-2)' : ''">
+          <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">
+            <i class="fas fa-circle-info mr-1" style="color:var(--purple)"></i> Estados ONU
+          </span>
+          <i :class="legendOpen ? 'fas fa-chevron-up' : 'fas fa-chevron-down'" style="font-size:10px;color:var(--text-muted)"></i>
         </div>
-        <div class="legend-row" title="Falta de energia elétrica na ONU">
-          <span class="legend-dot legend-dot-yellow"></span>
-          <span class="legend-label">DyingGasp</span>
-          <span class="legend-desc">Sem energia</span>
-        </div>
-        <div class="legend-row" title="Perda de sinal óptico (fibra cortada ou conector ruim)">
-          <span class="legend-dot legend-dot-red"></span>
-          <span class="legend-label">LOS/LOSi</span>
-          <span class="legend-desc">Fibra cortada</span>
-        </div>
-        <div class="legend-row" title="Perda de sincronismo GPON">
-          <span class="legend-dot legend-dot-red"></span>
-          <span class="legend-label">LOF</span>
-          <span class="legend-desc">Problema GPON</span>
-        </div>
-        <div class="legend-row" title="ONU reiniciou">
-          <span class="legend-dot legend-dot-blue"></span>
-          <span class="legend-label">Reboot</span>
-          <span class="legend-desc">Reiniciou</span>
-        </div>
-        <div class="legend-row" title="Falha de comunicação OMCI">
-          <span class="legend-dot legend-dot-yellow"></span>
-          <span class="legend-label">OMCI Down</span>
-          <span class="legend-desc">Falha OMCI</span>
-        </div>
-        <div class="legend-row" title="ONU desligada">
-          <span class="legend-dot legend-dot-gray"></span>
-          <span class="legend-label">PowerOff</span>
-          <span class="legend-desc">Desligada</span>
-        </div>
-        <div class="legend-row" title="Sinal óptico fraco (RX OLT abaixo de -28 dBm)">
-          <span class="legend-dot" style="background:linear-gradient(135deg,#ff7b72,#e3b341)"></span>
-          <span class="legend-label">RX &lt; -28</span>
-          <span class="legend-desc">Sinal ruim</span>
+        <!-- Conteúdo retrátil -->
+        <div x-show="legendOpen" x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0" class="sidebar-legend" style="border-top:none;margin-top:0">
+          <div class="legend-row" title="Cliente online e funcionando">
+            <span class="legend-dot legend-dot-green"></span>
+            <span class="legend-label">working</span>
+            <span class="legend-desc">Online</span>
+          </div>
+          <div class="legend-row" title="Falta de energia elétrica na ONU">
+            <span class="legend-dot legend-dot-yellow"></span>
+            <span class="legend-label">DyingGasp</span>
+            <span class="legend-desc">Sem energia</span>
+          </div>
+          <div class="legend-row" title="Perda de sinal óptico (fibra cortada ou conector ruim)">
+            <span class="legend-dot legend-dot-red"></span>
+            <span class="legend-label">LOS/LOSi</span>
+            <span class="legend-desc">Fibra cortada</span>
+          </div>
+          <div class="legend-row" title="Perda de sincronismo GPON">
+            <span class="legend-dot legend-dot-red"></span>
+            <span class="legend-label">LOF</span>
+            <span class="legend-desc">Problema GPON</span>
+          </div>
+          <div class="legend-row" title="ONU reiniciou">
+            <span class="legend-dot legend-dot-blue"></span>
+            <span class="legend-label">Reboot</span>
+            <span class="legend-desc">Reiniciou</span>
+          </div>
+          <div class="legend-row" title="Falha de comunicação OMCI">
+            <span class="legend-dot legend-dot-yellow"></span>
+            <span class="legend-label">OMCI Down</span>
+            <span class="legend-desc">Falha OMCI</span>
+          </div>
+          <div class="legend-row" title="ONU desligada">
+            <span class="legend-dot legend-dot-gray"></span>
+            <span class="legend-label">PowerOff</span>
+            <span class="legend-desc">Desligada</span>
+          </div>
+          <div class="legend-row" title="Sinal óptico fraco (RX OLT abaixo de -28 dBm)">
+            <span class="legend-dot" style="background:linear-gradient(135deg,#ff7b72,#e3b341)"></span>
+            <span class="legend-label">RX &lt; -28</span>
+            <span class="legend-desc">Sinal ruim</span>
+          </div>
         </div>
       </div>
     </aside>
@@ -1402,7 +1413,7 @@
   </div>
 
   <!-- ONU Detail Modal -->
-  <div x-show="onuDetailModal" class="modal-overlay" @click.self="onuDetailModal=false">
+  <div x-show="onuDetailModal" class="modal-overlay" @click.self="closeONUDetail()">
     <div class="modal modal-lg">
       <div class="modal-header">
         <div class="modal-title">
@@ -1413,7 +1424,11 @@
         </div>
         <div style="display:flex;gap:6px">
           <button @click="refreshONUDetail()" class="btn btn-warning btn-xs" title="Forçar atualização"><i class="fas fa-rotate-right"></i></button>
-          <button @click="onuDetailModal=false" class="btn btn-ghost btn-xs"><i class="fas fa-times"></i></button>
+          <button @click="rebootONU()" class="btn btn-danger btn-xs" title="Reiniciar ONU"
+                  x-show="currentUser && currentUser.role === 'admin'">
+            <i class="fas fa-power-off"></i> Reboot
+          </button>
+          <button @click="closeONUDetail()" class="btn btn-ghost btn-xs"><i class="fas fa-times"></i></button>
         </div>
       </div>
 
@@ -1439,6 +1454,7 @@
           <button @click="detailTab='wan'"      :class="detailTab==='wan'?'tab-btn active':'tab-btn'"><i class="fas fa-globe mr-1"></i>WAN</button>
           <button @click="detailTab='voip'"     :class="detailTab==='voip'?'tab-btn active':'tab-btn'"><i class="fas fa-phone mr-1"></i>VoIP</button>
           <button @click="detailTab='firmware'" :class="detailTab==='firmware'?'tab-btn active':'tab-btn'"><i class="fas fa-microchip mr-1"></i>Firmware</button>
+          <button @click="detailTab='traffic';loadONUTraffic()" :class="detailTab==='traffic'?'tab-btn active':'tab-btn'"><i class="fas fa-chart-area mr-1"></i>Tráfego</button>
         </div>
 
         <!-- Info Geral -->
@@ -1576,6 +1592,105 @@
             </div>
           </template>
           <div x-show="!onuDetailData || !onuDetailData.firmware" class="empty-state" style="padding:24px"><i class="fas fa-microchip" style="font-size:24px"></i><p>Dados de firmware não disponíveis.</p></div>
+        </div>
+
+        <!-- Tráfego em Tempo Real -->
+        <div x-show="detailTab==='traffic'" x-data="{ trafficInterval: null }" @traffic-tab-closed.window="clearInterval(trafficInterval)">
+          <!-- Loading -->
+          <div x-show="onuTrafficLoading" class="empty-state" style="padding:24px">
+            <div class="spinner" style="margin:0 auto 12px"></div>
+            <p>Consultando tráfego na OLT...</p>
+          </div>
+          <!-- Dados -->
+          <div x-show="!onuTrafficLoading && onuTrafficData">
+            <!-- Cabeçalho com botões -->
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)">
+              <span style="font-size:12px;color:var(--text-muted)">
+                <i class="fas fa-clock mr-1"></i>
+                Atualizado: <span x-text="onuTrafficData ? onuTrafficData.last_updated : ''"></span>
+              </span>
+              <div style="display:flex;gap:6px">
+                <button @click="loadONUTraffic()" class="btn btn-ghost btn-xs" title="Atualizar agora"><i class="fas fa-rotate-right"></i></button>
+                <button @click="toggleTrafficAutoRefresh()" :class="trafficAutoRefresh ? 'btn btn-success btn-xs' : 'btn btn-ghost btn-xs'" title="Auto-atualizar a cada 5s">
+                  <i :class="trafficAutoRefresh ? 'fas fa-pause' : 'fas fa-play'"></i>
+                  <span x-text="trafficAutoRefresh ? ' Pausar' : ' Auto'"></span>
+                </button>
+              </div>
+            </div>
+            <!-- Cards de métricas -->
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;padding:16px">
+              <!-- Download (RX) -->
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px">
+                <div style="font-size:11px;font-weight:600;color:#3fb950;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+                  <i class="fas fa-arrow-down mr-1"></i> Download (RX)
+                </div>
+                <div style="font-size:22px;font-weight:700;color:var(--text-primary)" x-text="onuTrafficData && onuTrafficData.traffic ? formatBps(onuTrafficData.traffic.rx_bps) : '—'"></div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px" x-text="onuTrafficData && onuTrafficData.traffic ? (onuTrafficData.traffic.rx_pps || 0) + ' pps' : ''"></div>
+                <div x-show="onuTrafficData && onuTrafficData.traffic && onuTrafficData.traffic.rx_bw_util !== null" style="margin-top:8px">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:3px">
+                    <span>Utilização</span>
+                    <span x-text="onuTrafficData && onuTrafficData.traffic ? (onuTrafficData.traffic.rx_bw_util || 0) + '%' : ''"></span>
+                  </div>
+                  <div style="background:var(--border);border-radius:3px;height:5px">
+                    <div :style="{width: Math.min(onuTrafficData.traffic.rx_bw_util||0,100)+'%',height:'100%',borderRadius:'3px',background:'#3fb950'}"></div>
+                  </div>
+                </div>
+              </div>
+              <!-- Upload (TX) -->
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px">
+                <div style="font-size:11px;font-weight:600;color:#58a6ff;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+                  <i class="fas fa-arrow-up mr-1"></i> Upload (TX)
+                </div>
+                <div style="font-size:22px;font-weight:700;color:var(--text-primary)" x-text="onuTrafficData && onuTrafficData.traffic ? formatBps(onuTrafficData.traffic.tx_bps) : '—'"></div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px" x-text="onuTrafficData && onuTrafficData.traffic ? (onuTrafficData.traffic.tx_pps || 0) + ' pps' : ''"></div>
+                <div x-show="onuTrafficData && onuTrafficData.traffic && onuTrafficData.traffic.tx_bw_util !== null" style="margin-top:8px">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:3px">
+                    <span>Utilização</span>
+                    <span x-text="onuTrafficData && onuTrafficData.traffic ? (onuTrafficData.traffic.tx_bw_util || 0) + '%' : ''"></span>
+                  </div>
+                  <div style="background:var(--border);border-radius:3px;height:5px">
+                    <div :style="{width: Math.min(onuTrafficData.traffic.tx_bw_util||0,100)+'%',height:'100%',borderRadius:'3px',background:'#58a6ff'}"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Gráfico de histórico (amostras coletadas) -->
+            <div style="padding:0 16px 16px">
+              <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">
+                <i class="fas fa-chart-area mr-1"></i> Histórico (últimas amostras)
+              </div>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px;min-height:120px;position:relative">
+                <canvas id="trafficChart" style="width:100%;height:120px"></canvas>
+                <div x-show="!trafficHistory || trafficHistory.length < 2" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px">
+                  <i class="fas fa-chart-area mr-2"></i> Aguardando amostras... (use Auto para coletar)
+                </div>
+              </div>
+            </div>
+            <!-- Pico e totais -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:0 16px 16px">
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Pico RX</div>
+                <div style="font-size:13px;font-weight:700;color:#3fb950" x-text="onuTrafficData && onuTrafficData.traffic ? formatBps(onuTrafficData.traffic.rx_peak_bps) : '—'"></div>
+              </div>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Pico TX</div>
+                <div style="font-size:13px;font-weight:700;color:#58a6ff" x-text="onuTrafficData && onuTrafficData.traffic ? formatBps(onuTrafficData.traffic.tx_peak_bps) : '—'"></div>
+              </div>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Total RX</div>
+                <div style="font-size:13px;font-weight:700;color:#3fb950" x-text="onuTrafficData && onuTrafficData.traffic ? formatBytes(onuTrafficData.traffic.rx_total_bytes) : '—'"></div>
+              </div>
+              <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center">
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Total TX</div>
+                <div style="font-size:13px;font-weight:700;color:#58a6ff" x-text="onuTrafficData && onuTrafficData.traffic ? formatBytes(onuTrafficData.traffic.tx_total_bytes) : '—'"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Vazio -->
+          <div x-show="!onuTrafficLoading && !onuTrafficData" class="empty-state" style="padding:24px">
+            <i class="fas fa-chart-area" style="font-size:24px"></i>
+            <p>Clique na aba Tráfego para consultar.</p>
+          </div>
         </div>
 
       </div><!-- /detail data -->

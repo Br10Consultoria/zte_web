@@ -89,6 +89,21 @@ class OLTDriver:
     def cmd_onu_power(self, onu_iface: str) -> str:
         raise NotImplementedError
 
+    def cmd_onu_reboot(self, onu_iface: str) -> List[str]:
+        """
+        Retorna lista de comandos para reiniciar a ONU.
+        O reboot requer entrada no modo de gerenciamento e confirmação.
+        """
+        raise NotImplementedError
+
+    def cmd_onu_traffic(self, onu_iface: str) -> str:
+        """Retorna comando para consultar tráfego da ONU (Bps/pps)."""
+        raise NotImplementedError
+
+    def parse_onu_traffic(self, output: str) -> dict:
+        """Parseia output de show interface gpon_onu-... ou gpon-onu_..."""
+        raise NotImplementedError
+
     def cmd_discover_ports(self) -> List[str]:
         """Retorna lista de comandos para descoberta de portas."""
         raise NotImplementedError
@@ -126,6 +141,106 @@ class OLTDriver:
 
 
 # ============================================================
+# PARSER DE TRÁFEGO (COMUM A TODOS OS MODELOS)
+# ============================================================
+
+def _parse_onu_traffic_common(output: str) -> dict:
+    """
+    Parseia output de 'show interface gpon_onu-S/C/P:ID' ou 'gpon-onu_...'.
+
+    Exemplo de output ZTE C300/C610:
+      ONU statistic:
+         Input rate :             800704 Bps             1205 pps
+         Output rate:            1629378 Bps             1565 pps
+         Input bandwidth utilization :0.6%
+         Output bandwidth utilization: N/A
+      Interface peak rate:
+         Input peak rate :             875532 Bps             1205 pps
+         Output peak rate:            1703780 Bps             1715 pps
+      Total statistic:
+       Input :
+          Bytes:288115074            Packets:576376
+       Output:
+          Bytes:995006374            Packets:932691
+    """
+    result = {
+        "rx_bps":        None,
+        "rx_pps":        None,
+        "tx_bps":        None,
+        "tx_pps":        None,
+        "rx_bw_util":    None,
+        "tx_bw_util":    None,
+        "rx_peak_bps":   None,
+        "tx_peak_bps":   None,
+        "rx_total_bytes": None,
+        "tx_total_bytes": None,
+        "rx_total_pkts":  None,
+        "tx_total_pkts":  None,
+    }
+
+    def _int(s):
+        try:
+            return int(s.replace(',', '').strip())
+        except Exception:
+            return None
+
+    def _float(s):
+        try:
+            return float(s.replace('%', '').strip())
+        except Exception:
+            return None
+
+    for line in output.split('\n'):
+        line = line.strip()
+        # Input rate :   800704 Bps   1205 pps
+        m = re.match(r'Input rate\s*:\s*(\d+)\s*Bps\s*(\d+)\s*pps', line, re.IGNORECASE)
+        if m:
+            result['rx_bps'] = _int(m.group(1))
+            result['rx_pps'] = _int(m.group(2))
+            continue
+        # Output rate:  1629378 Bps   1565 pps
+        m = re.match(r'Output rate\s*:\s*(\d+)\s*Bps\s*(\d+)\s*pps', line, re.IGNORECASE)
+        if m:
+            result['tx_bps'] = _int(m.group(1))
+            result['tx_pps'] = _int(m.group(2))
+            continue
+        # Input bandwidth utilization :0.6%
+        m = re.match(r'Input bandwidth utilization\s*:\s*([\d\.]+)%', line, re.IGNORECASE)
+        if m:
+            result['rx_bw_util'] = _float(m.group(1))
+            continue
+        # Output bandwidth utilization: N/A  ou  1.2%
+        m = re.match(r'Output bandwidth utilization\s*:\s*([\d\.]+)%', line, re.IGNORECASE)
+        if m:
+            result['tx_bw_util'] = _float(m.group(1))
+            continue
+        # Input peak rate :  875532 Bps  1205 pps
+        m = re.match(r'Input peak rate\s*:\s*(\d+)\s*Bps', line, re.IGNORECASE)
+        if m:
+            result['rx_peak_bps'] = _int(m.group(1))
+            continue
+        # Output peak rate: 1703780 Bps  1715 pps
+        m = re.match(r'Output peak rate\s*:\s*(\d+)\s*Bps', line, re.IGNORECASE)
+        if m:
+            result['tx_peak_bps'] = _int(m.group(1))
+            continue
+        # Bytes:288115074   Packets:576376  (dentro de Input)
+        m = re.match(r'Bytes:(\d+)\s+Packets:(\d+)', line, re.IGNORECASE)
+        if m:
+            # Detecta se é Input ou Output pelo contexto anterior
+            if result['rx_total_bytes'] is None:
+                result['rx_total_bytes'] = _int(m.group(1))
+                result['rx_total_pkts']  = _int(m.group(2))
+            else:
+                result['tx_total_bytes'] = _int(m.group(1))
+                result['tx_total_pkts']  = _int(m.group(2))
+            continue
+
+    logger.debug(f"[PARSER] parse_onu_traffic: {result}")
+    return result
+
+
+# ============================================================
 # DRIVER ZTE C320 / C600 / C610 / C620 / C650
 # ============================================================
 
@@ -156,6 +271,23 @@ class ZTEC320Driver(OLTDriver):
 
     def cmd_onu_power(self, onu_iface: str) -> str:
         return f"show pon power attenuation {onu_iface}"
+
+    def cmd_onu_reboot(self, onu_iface: str) -> List[str]:
+        """
+        Sequência de comandos para reboot da ONU no C320/C600/C620/C650.
+        Formato: gpon-onu_1/CARD/PON:ID
+        """
+        return [
+            f"pon-onu-mng {onu_iface}",
+            "reboot",
+            "y",
+        ]
+
+    def cmd_onu_traffic(self, onu_iface: str) -> str:
+        return f"show interface {onu_iface}"
+
+    def parse_onu_traffic(self, output: str) -> dict:
+        return _parse_onu_traffic_common(output)
 
     def cmd_discover_ports(self) -> List[str]:
         return [
@@ -403,6 +535,23 @@ class ZTEC300Driver(OLTDriver):
 
     def cmd_onu_power(self, onu_iface: str) -> str:
         return f"show pon power attenuation {onu_iface}"
+
+    def cmd_onu_reboot(self, onu_iface: str) -> List[str]:
+        """
+        Sequência de comandos para reboot da ONU no C300/C610/Titan.
+        Formato: gpon_onu-SLOT/CARD/PON:ID
+        """
+        return [
+            f"pon-onu-mng {onu_iface}",
+            "reboot",
+            "y",
+        ]
+
+    def cmd_onu_traffic(self, onu_iface: str) -> str:
+        return f"show interface {onu_iface}"
+
+    def parse_onu_traffic(self, output: str) -> dict:
+        return _parse_onu_traffic_common(output)
 
     def cmd_discover_ports(self) -> List[str]:
         # Na C300/C610, 'show interface gpon_olt' sem iface específica retorna erro.
