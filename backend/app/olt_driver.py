@@ -720,26 +720,31 @@ class ZTEC300Driver(OLTDriver):
           - Apenas cabeçalho (sem ONUs): porta válida mas vazia
           - Mensagem de erro/invalid: porta não existe
 
-        Aceita a porta se o output não contiver mensagem de erro,
-        mesmo que não haja ONUs (porta pode estar vazia).
+        Aceita a porta somente se:
+          1. Não contiver nenhum indicador de erro
+          2. Tiver linhas de ONU OU cabeçalho de tabela
         """
         out = output.strip()
         if not out:
             return False
         out_lower = out.lower()
-        # Rejeita se contiver indicadores de erro
+        # Rejeita se contiver qualquer indicador de erro
+        # Inclui '%' sozinho para capturar '%Error', '% Error', etc.
         error_indicators = (
             "invalid input",
             "invalid command",
+            "invalid parameter",
             "error",
             "not exist",
             "no such",
-            "% ",
-            "^\n",
+            "^",
         )
         if any(ind in out_lower for ind in error_indicators):
             return False
-        # Aceita se tiver cabeçalho de tabela (OnuIndex) ou linhas de ONU
+        if "%" in out:
+            return False
+        # Aceita SOMENTE se tiver cabeçalho de tabela OU linhas de ONU
+        # Isso evita aceitar outputs ambíguos (ex: prompt vazio, mensagens genéricas)
         iface_prefix = f"{slot}/{card}/{pon}:"
         has_onus = any(line.strip().startswith(iface_prefix) for line in out.split('\n'))
         has_header = "onuindex" in out_lower or "admin state" in out_lower
