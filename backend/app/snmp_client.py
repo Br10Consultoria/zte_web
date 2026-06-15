@@ -218,18 +218,21 @@ def _parse_gpon_ifname(if_name: str) -> Optional[Tuple[int, int, int]]:
     Extrai (slot, card, pon) de um nome de interface GPON.
 
     Formatos suportados:
-      gpon_olt-1/1/1   → slot=1, card=1, pon=1  (ZTE C300/C610 Titan)
+      gpon_olt-1/1/1   → slot=1, card=1, pon=1  (ZTE C300/C610 Titan — legado)
       gpon-olt_1/1/1   → slot=1, card=1, pon=1  (ZTE C320/C600/C620)
+      gpon_1/2/1       → slot=1, card=2, pon=1  (ZTE C300 ARAMARI — ifName sem sufixo olt)
 
     Retorna None se não for interface GPON PON.
     """
-    # Formato C300/C610: gpon_olt-SLOT/CARD/PON
-    m = re.match(r'^gpon_olt-(\d+)/(\d+)/(\d+)$', if_name.strip())
+    s = if_name.strip()
+
+    # Formato com prefixo completo: gpon_olt- ou gpon-olt_ (aceita ambos)
+    m = re.match(r'^gpon[_-]olt[_-](\d+)/(\d+)/(\d+)$', s)
     if m:
         return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
-    # Formato C320/C600: gpon-olt_SLOT/CARD/PON
-    m = re.match(r'^gpon-olt_(\d+)/(\d+)/(\d+)$', if_name.strip())
+    # Formato curto: gpon_SHELF/SLOT/PON (C300 ARAMARI retorna assim via ifName)
+    m = re.match(r'^gpon_(\d+)/(\d+)/(\d+)$', s)
     if m:
         return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
