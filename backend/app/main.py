@@ -17,12 +17,26 @@ except AttributeError:
 from .config import settings
 
 
+# Resolve o diretório raiz do projeto de forma robusta:
+# - No Docker (WORKDIR=/app, COPY . .): __file__ = /app/app/main.py -> raiz = /app
+# - Local sem Docker (cd backend; uvicorn): __file__ = .../backend/app/main.py -> raiz = .../zte_titan
+# A variável APP_ROOT_DIR pode ser definida manualmente para sobrescrever.
+_APP_FILE_DIR = os.path.dirname(os.path.abspath(__file__))  # .../app/
+_BACKEND_DIR  = os.path.dirname(_APP_FILE_DIR)               # .../backend/ ou /app
+_ROOT_DIR     = os.environ.get(
+    "APP_ROOT_DIR",
+    # No Docker: /app/app/../ = /app (correto)
+    # Local:     .../backend/app/../ = .../backend (errado, precisa subir mais um)
+    os.path.dirname(_BACKEND_DIR) if os.path.isdir(os.path.join(os.path.dirname(_BACKEND_DIR), "frontend")) else _BACKEND_DIR
+)
+
+
 def _setup_logging():
     """
     Configura logging detalhado em arquivo para acompanhamento em tempo real.
-    Arquivo: /opt/zte_titan/data/zte_titan.log (rotativo, max 10MB x 5 arquivos)
+    Arquivo: <root>/data/zte_titan.log (rotativo, max 10MB x 5 arquivos)
     """
-    log_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+    log_dir = os.path.join(_ROOT_DIR, "data")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "zte_titan.log")
 
@@ -131,7 +145,7 @@ def health_check():
 
 
 # Servir arquivos estáticos do frontend
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+frontend_path = os.path.join(_ROOT_DIR, "frontend")
 if os.path.exists(frontend_path):
     app.mount("/static", StaticFiles(directory=os.path.join(frontend_path, "static")), name="static")
 
