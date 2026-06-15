@@ -371,26 +371,35 @@ class OLTTelnetClient:
         output = ""
         start = time.time()
         last_data_time = time.time()
+        # Usa o prompt específico detectado no login (ex: b"OLT_ZTE_ARAMARI#")
+        # para evitar parar cedo ao encontrar '#' em meio ao output
+        prompt_str = self._prompt.decode("ascii", errors="replace")
 
         while time.time() - start < timeout:
-            chunk_bytes = self.tn.read_very_eager(wait=0.3)
+            chunk_bytes = self.tn.read_very_eager(wait=0.4)
             if chunk_bytes:
                 chunk = chunk_bytes.decode("utf-8", errors="replace")
                 output += chunk
                 last_data_time = time.time()
 
-                # Trata paginação --More--
-                if re.search(r'--\s*[Mm]ore\s*--', chunk):
+                # Trata paginação --More-- / --- More --- / --more--
+                if re.search(r'-+\s*[Mm]ore\s*-+', chunk):
                     self.tn.write(b" ")
-                    time.sleep(0.2)
+                    time.sleep(0.3)
                     continue
 
-                # Detecta prompt final
-                if re.search(r'[>#]\s*$', chunk.strip()):
-                    break
+                # Detecta prompt final usando o prompt específico da OLT
+                # Verifica no output acumulado (não apenas no chunk) para
+                # evitar falsos positivos com '#' no meio do output
+                stripped = output.rstrip()
+                if stripped.endswith("#") or stripped.endswith(">"):
+                    # Confirma que é o prompt real (não um '#' dentro do output)
+                    last_line = stripped.split('\n')[-1].strip()
+                    if re.match(r'^[\w\-\.]+[#>]\s*$', last_line):
+                        break
             else:
-                # Se ficou 1.5s sem dados e já temos saída, considera completo
-                if output and (time.time() - last_data_time) > 1.5:
+                # Se ficou 2s sem dados e já temos saída, considera completo
+                if output and (time.time() - last_data_time) > 2.0:
                     break
                 time.sleep(0.1)
 
