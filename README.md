@@ -74,37 +74,6 @@ sudo systemctl start redis
 chmod +x start.sh
 ./start.sh
 ```
-
-Acesse: **http://localhost:8000**
-
----
-
-### Opção 3 — Instalação manual
-
-```bash
-cd zte_titan/backend
-
-# Crie o ambiente virtual
-python3 -m venv venv
-source venv/bin/activate
-
-# Instale as dependências
-pip install -r requirements.txt
-
-# Configure as variáveis de ambiente
-export SECRET_KEY="sua-chave-secreta-aqui"
-export DATABASE_URL="sqlite:///./data/zte_titan.db"
-export REDIS_HOST="localhost"
-export REDIS_PORT="6379"
-
-mkdir -p ../data
-
-# Inicie o servidor
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
----
-
 ## Primeiro Acesso
 
 | Campo | Valor |
