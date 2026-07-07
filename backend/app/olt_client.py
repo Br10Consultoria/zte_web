@@ -17,6 +17,7 @@ import time
 import socket
 import logging
 import warnings
+import threading
 import paramiko
 from typing import Optional, List, Dict, Any, Tuple
 from .config import settings
@@ -34,6 +35,9 @@ with warnings.catch_warnings():
 # LOGGER DETALHADO
 # ============================================================
 logger = logging.getLogger("olt_client")
+_TELNET_ENDPOINT_LOCKS = {}
+_TELNET_ENDPOINT_LOCKS_GUARD = threading.Lock()
+_TELNET_COOLDOWN_UNTIL = {}
 
 
 def _log(level: str, msg: str):
@@ -284,10 +288,43 @@ class OLTTelnetClient:
         self.password = password
         self.tn = None
         self._prompt = b"#"
+        self._endpoint_key = (ip, port)
+        self._endpoint_lock = None
+        self._endpoint_lock_acquired = False
+
+    def _acquire_endpoint(self):
+        if self._endpoint_lock_acquired:
+            return
+        with _TELNET_ENDPOINT_LOCKS_GUARD:
+            lock = _TELNET_ENDPOINT_LOCKS.get(self._endpoint_key)
+            if lock is None:
+                lock = threading.RLock()
+                _TELNET_ENDPOINT_LOCKS[self._endpoint_key] = lock
+            self._endpoint_lock = lock
+        lock.acquire()
+        self._endpoint_lock_acquired = True
+
+        cooldown_until = _TELNET_COOLDOWN_UNTIL.get(self._endpoint_key, 0)
+        wait = cooldown_until - time.time()
+        if wait > 0:
+            _log("warning", f"[TELNET] Aguardando {wait:.1f}s antes de nova sessao em {self.ip}:{self.port}")
+            time.sleep(wait)
+
+    def _release_endpoint(self):
+        if self._endpoint_lock_acquired and self._endpoint_lock:
+            try:
+                self._endpoint_lock.release()
+            except RuntimeError:
+                pass
+        self._endpoint_lock_acquired = False
+
+    def _mark_transient_failure(self, seconds: int = 10):
+        _TELNET_COOLDOWN_UNTIL[self._endpoint_key] = time.time() + seconds
 
     def connect(self):
         _log("info", f"[TELNET] Conectando a {self.ip}:{self.port} como '{self.username}'")
         try:
+            self._acquire_endpoint()
             self.tn = SimpleTelnet(self.ip, self.port, timeout=settings.SSH_TIMEOUT)
             self.tn.open()
 
@@ -359,6 +396,7 @@ class OLTTelnetClient:
             _log("info", f"[TELNET] Conectado com sucesso a {self.ip}:{self.port}")
 
         except OLTConnectionError:
+            self._release_endpoint()
             raise
         except Exception as e:
             try:
@@ -375,6 +413,7 @@ class OLTTelnetClient:
                 OSError,
             )
             if isinstance(e, transient_errors) and not getattr(self, "_retrying_connect", False):
+                self._mark_transient_failure(seconds=5)
                 _log("warning", f"[TELNET] Conexao resetada durante login em {self.ip}:{self.port}; tentando novamente em 2s")
                 self._retrying_connect = True
                 time.sleep(2)
@@ -382,6 +421,9 @@ class OLTTelnetClient:
                     return self.connect()
                 finally:
                     self._retrying_connect = False
+            if isinstance(e, transient_errors):
+                self._mark_transient_failure(seconds=15)
+            self._release_endpoint()
             raise OLTConnectionError(f"Falha Telnet em {self.ip}:{self.port} — {e}")
 
     def execute_command(self, command: str, timeout: int = None) -> str:
@@ -435,6 +477,8 @@ class OLTTelnetClient:
             _log("info", f"[TELNET] Desconectado de {self.ip}")
         except Exception:
             pass
+        finally:
+            self._release_endpoint()
 
 
 # ============================================================

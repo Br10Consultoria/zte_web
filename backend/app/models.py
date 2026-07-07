@@ -34,7 +34,7 @@ class OLT(Base):
     snmp_version = Column(String(5), default="2c")
     status = Column(String(20), default="unknown")
     model = Column(String(50), nullable=True)
-    olt_model = Column(String(30), nullable=True, default="zte_c320")  # chave do driver: zte_c320, zte_c300
+    olt_model = Column(String(30), nullable=True, default="zte_c600")  # chave do driver: zte_c600, zte_c300
     firmware = Column(String(50), nullable=True)
     last_check = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

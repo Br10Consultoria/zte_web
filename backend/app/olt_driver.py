@@ -5,8 +5,8 @@ Cada modelo de OLT tem comandos e formatos de interface diferentes.
 Este módulo fornece uma camada de abstração que encapsula essas diferenças.
 
 Modelos suportados:
-  zte_c320  — ZTE C320/C600/C620/C650 (formato: gpon-olt_1/CARD/PON)
-  zte_c300  — ZTE C300/C300M/C300T/C610 Titan (formato: gpon_olt-SLOT/CARD/PON)
+  zte_c600  — ZTE C600 (formato: gpon_olt-SLOT/CARD/PON)
+  zte_c300  — ZTE C300 (formato: gpon-olt_SLOT/CARD/PON)
 
 Como adicionar um novo modelo:
   1. Crie uma subclasse de OLTDriver
@@ -24,17 +24,17 @@ logger = logging.getLogger("olt_driver")
 # ============================================================
 
 OLT_MODELS = {
-    "zte_c320": {
-        "label": "ZTE C320 / C600 / C620 / C650",
+    "zte_c600": {
+        "label": "ZTE C600",
         "vendor": "ZTE",
-        "series": "C320",
-        # Interface: gpon-olt_1/CARD/PON  |  gpon-onu_1/CARD/PON:ID
+        "series": "C600",
+        # Interface: gpon_olt-SLOT/CARD/PON  |  gpon_onu-SLOT/CARD/PON:ID
     },
     "zte_c300": {
-        "label": "ZTE C300 / C300M / C300T / C610 (Titan)",
+        "label": "ZTE C300",
         "vendor": "ZTE",
         "series": "C300",
-        # Interface: gpon_olt-SLOT/CARD/PON  |  gpon_onu-SLOT/CARD/PON:ID
+        # Interface: gpon-olt_SLOT/CARD/PON  |  gpon-onu_SLOT/CARD/PON:ID
     },
 }
 
@@ -241,21 +241,21 @@ def _parse_onu_traffic_common(output: str) -> dict:
 
 
 # ============================================================
-# DRIVER ZTE C320 / C600 / C610 / C620 / C650
+# DRIVER ZTE C600
 # ============================================================
 
-class ZTEC320Driver(OLTDriver):
+class ZTEC600Driver(OLTDriver):
     """
-    Driver para ZTE C320/C600/C610/C620/C650.
-    Formato de interface: gpon-olt_1/CARD/PON  |  gpon-onu_1/CARD/PON:ID
+    Driver para ZTE C600.
+    Formato de interface: gpon_olt-SLOT/CARD/PON  |  gpon_onu-SLOT/CARD/PON:ID
     """
-    model_key = "zte_c320"
+    model_key = "zte_c600"
 
     def olt_iface(self, slot: int, card: int, pon: int) -> str:
-        return f"gpon-olt_1/{card}/{pon}"
+        return f"gpon_olt-{slot}/{card}/{pon}"
 
     def _onu_iface_parts(self, slot: int, card: int, pon: int, onu_id: int) -> str:
-        return f"gpon-onu_1/{card}/{pon}:{onu_id}"
+        return f"gpon_onu-{slot}/{card}/{pon}:{onu_id}"
 
     def cmd_onu_state(self, olt_iface: str) -> str:
         return f"show gpon onu state {olt_iface}"
@@ -274,8 +274,8 @@ class ZTEC320Driver(OLTDriver):
 
     def cmd_onu_reboot(self, onu_iface: str) -> List[str]:
         """
-        Sequência de comandos para reboot da ONU no C320/C600/C620/C650.
-        Formato: gpon-onu_1/CARD/PON:ID
+        Sequência de comandos para reboot da ONU no C600.
+        Formato: gpon_onu-SLOT/CARD/PON:ID
         """
         return [
             f"pon-onu-mng {onu_iface}",
@@ -291,13 +291,12 @@ class ZTEC320Driver(OLTDriver):
 
     def cmd_discover_ports(self) -> List[str]:
         return [
-            "show interface gpon-olt",
-            "show running-config interface gpon-olt",
+            "show gpon onu state",
         ]
 
     def parse_onu_state(self, output: str) -> List[Dict]:
         """
-        Parseia: show gpon onu state gpon-olt_1/CARD/PON
+        Parseia: show gpon onu state gpon_olt-SLOT/CARD/PON
         Formato: 1/1/1:1   enable   enable   working   1(GPON)
         """
         onus = []
@@ -329,21 +328,21 @@ class ZTEC320Driver(OLTDriver):
                 "last_down_cause": None,
                 "status_color":    color,
             })
-        logger.debug(f"[PARSER] parse_onu_state (C320): {len(onus)} ONUs")
+        logger.debug(f"[PARSER] parse_onu_state (C600): {len(onus)} ONUs")
         return onus
 
     def parse_onu_baseinfo(self, output: str) -> List[Dict]:
         """
-        Parseia: show gpon onu baseinfo gpon-olt_1/CARD/PON
-        Formato: gpon-onu_1/1/1:1    ZTE-F660    sn      SN:TPLGBDC90DD8         ready
+        Parseia: show gpon onu baseinfo gpon_olt-SLOT/CARD/PON
+        Formato: gpon_onu-1/3/16:1    ZTE-F601V6.    sn      SN:MONU007F8491         ready
         """
         onus = []
         seen = set()
         for line in output.split('\n'):
             line = line.strip()
-            # Formato com prefixo gpon-onu_
+            # Formato com prefixo gpon_onu- ou gpon-onu_
             m = re.match(
-                r'^gpon-onu_(\d+/\d+(?:/\d+)?:\d+)\s+(\S+)\s+\S+\s+(\S+)',
+                r'^gpon[_-]onu[_-](\d+/\d+(?:/\d+)?:\d+)\s+(\S+)\s+\S+\s+(\S+)',
                 line
             )
             if m:
@@ -366,30 +365,30 @@ class ZTEC320Driver(OLTDriver):
                 if idx not in seen:
                     seen.add(idx)
                     onus.append({"onu_index": idx, "model": model, "serial": serial})
-        logger.debug(f"[PARSER] parse_onu_baseinfo (C320): {len(onus)} ONUs")
+        logger.debug(f"[PARSER] parse_onu_baseinfo (C600): {len(onus)} ONUs")
         return onus
 
     def parse_olt_rx(self, output: str) -> Dict[str, float]:
         """
-        Parseia: show pon power olt-rx gpon-olt_1/CARD/PON
-        Formato: gpon-onu_1/1/1:1    -27.786(dbm)
+        Parseia: show pon power olt-rx gpon_olt-SLOT/CARD/PON
+        Formato: gpon_onu-1/3/16:1    -28.860(dbm)
         """
         rx_map = {}
         for line in output.split('\n'):
             line = line.strip()
-            m = re.match(r'gpon-onu_(\d+/\d+(?:/\d+)?:\d+)\s+([-\d\.]+)', line)
+            m = re.match(r'gpon[_-]onu[_-](\d+/\d+(?:/\d+)?:\d+)\s+([-\d\.]+)', line)
             if m:
                 idx = m.group(1)
                 try:
                     rx_map[idx] = float(m.group(2))
                 except ValueError:
                     pass
-        logger.debug(f"[PARSER] parse_olt_rx (C320): {len(rx_map)} ONUs")
+        logger.debug(f"[PARSER] parse_olt_rx (C600): {len(rx_map)} ONUs")
         return rx_map
 
     def parse_onu_detail(self, output: str) -> Dict:
         """
-        Parseia: show gpon onu detail-info gpon-onu_1/CARD/PON:ID
+        Parseia: show gpon onu detail-info gpon_onu-SLOT/CARD/PON:ID
         Extrai campos principais do detail-info.
         """
         result = {}
@@ -431,7 +430,7 @@ class ZTEC320Driver(OLTDriver):
 
     def parse_onu_power(self, output: str) -> Dict:
         """
-        Parseia: show pon power attenuation gpon-onu_1/CARD/PON:ID
+        Parseia: show pon power attenuation gpon_onu-SLOT/CARD/PON:ID
         Formato:
           up      Rx :-26.968(dbm)      Tx:2.463(dbm)        29.431(dB)
           down    Tx :6.623(dbm)        Rx:-22.678(dbm)      29.301(dB)
@@ -475,13 +474,23 @@ class ZTEC320Driver(OLTDriver):
 
     def parse_discover_ports(self, output: str) -> List[Dict]:
         """
-        Parseia output de show interface gpon-olt.
-        Formato: gpon-olt_1/CARD/PON
+        Parseia output de show gpon onu state.
+        Formato: gpon_olt-SLOT/CARD/PON ou indices SLOT/CARD/PON:ONU
         """
         ports = []
         seen = set()
         for line in output.split('\n'):
-            m3 = re.search(r'gpon-olt_(\d+)/(\d+)/(\d+)', line)
+            m_onu = re.match(r'^(\d+)/(\d+)/(\d+):\d+', line)
+            if m_onu:
+                slot = int(m_onu.group(1))
+                card = int(m_onu.group(2))
+                pon = int(m_onu.group(3))
+                key = (slot, card, pon)
+                if key not in seen:
+                    seen.add(key)
+                    ports.append({"slot": slot, "card": card, "pon": pon, "port_type": "gpon"})
+                continue
+            m3 = re.search(r'gpon[_-]olt[_-](\d+)/(\d+)/(\d+)', line)
             if m3:
                 slot = int(m3.group(1))
                 card = int(m3.group(2))
@@ -491,14 +500,6 @@ class ZTEC320Driver(OLTDriver):
                     seen.add(key)
                     ports.append({"slot": slot, "card": card, "pon": pon, "port_type": "gpon"})
                 continue
-            m2 = re.search(r'gpon-olt_(\d+)/(\d+)(?!\s*/)', line)
-            if m2:
-                slot = int(m2.group(1))
-                pon  = int(m2.group(2))
-                key  = (slot, 1, pon)
-                if key not in seen:
-                    seen.add(key)
-                    ports.append({"slot": slot, "card": 1, "pon": pon, "port_type": "gpon"})
         return ports
 
 
@@ -661,15 +662,15 @@ class ZTEC300Driver(OLTDriver):
         Parseia: show gpon onu detail-info gpon_onu-SLOT/CARD/PON:ID
         Formato idêntico ao C320 nos campos principais.
         """
-        # Reutiliza o mesmo parser do C320 (campos idênticos)
-        return ZTEC320Driver().parse_onu_detail(output)
+        # Reutiliza parser de campos comuns.
+        return ZTEC600Driver().parse_onu_detail(output)
 
     def parse_onu_power(self, output: str) -> Dict:
         """
         Parseia: show pon power attenuation gpon_onu-SLOT/CARD/PON:ID
         Formato idêntico ao C320.
         """
-        return ZTEC320Driver().parse_onu_power(output)
+        return ZTEC600Driver().parse_onu_power(output)
 
     def parse_discover_ports(self, output: str) -> List[Dict]:
         """
@@ -754,12 +755,14 @@ class ZTEC300Driver(OLTDriver):
 # ============================================================
 
 DRIVERS: Dict[str, OLTDriver] = {
-    "zte_c320": ZTEC320Driver(),
+    "zte_c600": ZTEC600Driver(),
     "zte_c300": ZTEC300Driver(),
+    # Compatibilidade com registros antigos criados antes da separacao C600/C300.
+    "zte_c320": ZTEC600Driver(),
 }
 
 # Driver padrão (retrocompatibilidade)
-DEFAULT_DRIVER = DRIVERS["zte_c320"]
+DEFAULT_DRIVER = DRIVERS["zte_c600"]
 
 
 def get_driver(model_key: Optional[str]) -> OLTDriver:
@@ -772,28 +775,24 @@ def get_driver(model_key: Optional[str]) -> OLTDriver:
 def detect_model(login_banner: str) -> str:
     """
     Tenta detectar o modelo da OLT pelo banner de login.
-    Retorna a chave do modelo (ex: 'zte_c300') ou 'zte_c320' como padrão.
+    Retorna a chave do modelo (ex: 'zte_c300') ou 'zte_c600' como padrão.
 
     Regra principal:
-      - Banner contém "TITAN" ou "C300" ou "C610" → zte_c300
-        (ZTE C610 é da família C300/Titan: usa gpon_olt-SLOT/CARD/PON)
-      - Banner contém "C320" ou "C600" ou "C620" ou "C650" → zte_c320
-        (ZTE C320/C600/C620/C650: usa gpon-olt_1/CARD/PON)
+      - Banner contém "C600" ou "TITAN series" → zte_c600
+      - Banner contém "C300" → zte_c300
     """
     banner_lower = login_banner.lower()
 
-    # Família C300/Titan: C300, C300M, C300T, C610
-    if any(kw in banner_lower for kw in ("titan", "c300", "c610")):
+    if "c300" in banner_lower:
         return "zte_c300"
 
-    # Família C320: C320, C600, C620, C650
-    if any(kw in banner_lower for kw in ("c320", "c600", "c620", "c650")):
-        return "zte_c320"
+    if "c600" in banner_lower or "titan series" in banner_lower:
+        return "zte_c600"
 
     # Detecta pelo formato da interface presente no output
     if "gpon_olt-" in login_banner or "gpon_onu-" in login_banner:
-        return "zte_c300"
+        return "zte_c600"
     if "gpon-olt_" in login_banner or "gpon-onu_" in login_banner:
-        return "zte_c320"
+        return "zte_c300"
 
-    return "zte_c320"
+    return "zte_c600"

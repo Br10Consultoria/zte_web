@@ -85,7 +85,7 @@ class OLTCreate(BaseModel):
     protocol: str = "telnet"
     snmp_community: Optional[str] = None
     snmp_version: Optional[str] = "2c"
-    olt_model: Optional[str] = "zte_c320"  # chave do driver
+    olt_model: Optional[str] = "zte_c600"  # chave do driver
 
 
 class OLTUpdate(BaseModel):

@@ -29,6 +29,10 @@ router = APIRouter(prefix="/olts", tags=["OLTs"])
 logger = logging.getLogger("routes.olts")
 
 
+def _normalize_olt_model(model: str = None) -> str:
+    return "zte_c600" if model in (None, "", "zte_c320") else model
+
+
 # ============================================================
 # CRUD
 # ============================================================
@@ -56,7 +60,7 @@ def create_olt(
         protocol=body.protocol,
         snmp_community=body.snmp_community or "public",
         snmp_version=body.snmp_version or "2c",
-        olt_model=body.olt_model or "zte_c320",
+        olt_model=_normalize_olt_model(body.olt_model),
         status="unknown"
     )
     db.add(olt)
@@ -98,6 +102,8 @@ def update_olt(
         raise HTTPException(status_code=404, detail="OLT não encontrada")
 
     for field, value in body.model_dump(exclude_none=True).items():
+        if field == "olt_model":
+            value = _normalize_olt_model(value)
         setattr(olt, field, value)
 
     db.commit()
@@ -171,7 +177,7 @@ def test_connection(
         detected = detect_model(ssh_output)
         if detected:
             details["detected_model"] = detected
-            if not olt.olt_model or olt.olt_model == "zte_c320":
+            if not olt.olt_model or olt.olt_model in ("zte_c320", "zte_c600"):
                 # Atualiza apenas se ainda não foi definido manualmente como c300
                 olt.olt_model = detected
                 details["model_auto_set"] = True
@@ -217,7 +223,7 @@ def discover_ports(
     ports = []
     error_msgs = []
 
-    logger.info(f"[DISCOVER] OLT {olt.name} ({olt.ip}) — modelo: {olt.olt_model or 'zte_c320'}")
+    logger.info(f"[DISCOVER] OLT {olt.name} ({olt.ip}) — modelo: {olt.olt_model or 'zte_c600'}")
 
     # --- Tentativa 1: SNMP ---
     try:
@@ -228,7 +234,7 @@ def discover_ports(
             ssh_username=olt.username,
             ssh_password=olt.password,
             ssh_protocol=olt.protocol,
-            olt_model=olt.olt_model or "zte_c320"
+            olt_model=olt.olt_model or "zte_c600"
         )
         if snmp_ports:
             ports = snmp_ports

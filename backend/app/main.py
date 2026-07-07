@@ -252,7 +252,7 @@ def _migrate_db():
             ocols = {row[1] for row in result.fetchall()}
 
             if "olt_model" not in ocols:
-                conn.execute(sa.text("ALTER TABLE olts ADD COLUMN olt_model VARCHAR(30) DEFAULT 'zte_c320'"))
+                conn.execute(sa.text("ALTER TABLE olts ADD COLUMN olt_model VARCHAR(30) DEFAULT 'zte_c600'"))
                 conn.commit()
                 print("✅ Migração olts: coluna 'olt_model' adicionada")
 

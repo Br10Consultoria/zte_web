@@ -1044,7 +1044,7 @@
                   <tbody>
                     <template x-for="p in selectedOLTPorts" :key="p.id">
                       <tr>
-                        <td class="td-mono" style="color:#79c0ff" x-text="'gpon-olt_'+p.slot+'/'+(p.card||1)+'/'+p.pon"></td>
+                        <td class="td-mono" style="color:#79c0ff" x-text="oltInterfaceLabel(p.slot, p.card || 1, p.pon, selectedOLTForPorts ? selectedOLTForPorts.olt_model : null)"></td>
                         <td x-text="p.slot"></td>
                         <td x-text="p.card || 1"></td>
                         <td x-text="p.pon"></td>
@@ -1117,7 +1117,7 @@
                     <option value="">Selecione a PON</option>
                     <template x-for="p in filteredPorts" :key="p.id">
                       <option :value="p.id + '|' + p.slot + '|' + (p.card||1) + '|' + p.pon"
-                              x-text="'gpon-olt_'+p.slot+'/'+(p.card||1)+'/'+p.pon+' — '+p.onu_count+'/128 ONUs'+(p.onu_count>=115?' ⚠️ CHEIA':p.onu_count>=90?' ⚠️ Atenção':'')"></option>
+                              x-text="oltInterfaceLabel(p.slot, p.card || 1, p.pon)+' — '+p.onu_count+'/128 ONUs'+(p.onu_count>=115?' ⚠️ CHEIA':p.onu_count>=90?' ⚠️ Atenção':'')"></option>
                     </template>
                   </select>
                 </div>
@@ -1484,8 +1484,8 @@
         <div><label class="form-label">Modelo / Fabricante *</label>
           <select x-model="oltForm.olt_model" class="input-field">
             <optgroup label="ZTE">
-              <option value="zte_c320">ZTE C320 / C600 / C620 / C650</option>
-              <option value="zte_c300">ZTE C300 / C300M / C300T / C610 (Titan)</option>
+              <option value="zte_c600">ZTE C600</option>
+              <option value="zte_c300">ZTE C300</option>
             </optgroup>
           </select>
         </div>

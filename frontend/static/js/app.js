@@ -32,7 +32,7 @@ function app() {
     olts: [],
     oltModal: false,
     oltModalEdit: false,
-    oltForm: { name: '', ip: '', port: 22, username: '', password: '', protocol: 'ssh', snmp_community: 'public', snmp_version: '2c', olt_model: 'zte_c320' },
+    oltForm: { name: '', ip: '', port: 22, username: '', password: '', protocol: 'ssh', snmp_community: 'public', snmp_version: '2c', olt_model: 'zte_c600' },
     oltEditId: null,
     selectedOLTPorts: null,
     selectedOLTForPorts: null,
@@ -315,14 +315,15 @@ function app() {
     openOLTModal() {
       this.oltModalEdit = false;
       this.oltEditId = null;
-      this.oltForm = { name: '', ip: '', port: 22, username: '', password: '', protocol: 'ssh', snmp_community: 'public', snmp_version: '2c', olt_model: 'zte_c320' };
+      this.oltForm = { name: '', ip: '', port: 22, username: '', password: '', protocol: 'ssh', snmp_community: 'public', snmp_version: '2c', olt_model: 'zte_c600' };
       this.oltModal = true;
     },
 
     editOLT(olt) {
       this.oltModalEdit = true;
       this.oltEditId = olt.id;
-      this.oltForm = { name: olt.name, ip: olt.ip, port: olt.port, username: olt.username, password: '', protocol: olt.protocol, snmp_community: olt.snmp_community || 'public', snmp_version: olt.snmp_version || '2c', olt_model: olt.olt_model || 'zte_c320' };
+      const model = olt.olt_model === 'zte_c320' ? 'zte_c600' : (olt.olt_model || 'zte_c600');
+      this.oltForm = { name: olt.name, ip: olt.ip, port: olt.port, username: olt.username, password: '', protocol: olt.protocol, snmp_community: olt.snmp_community || 'public', snmp_version: olt.snmp_version || '2c', olt_model: model };
       this.oltModal = true;
     },
 
@@ -400,6 +401,14 @@ function app() {
       }
     },
 
+    oltInterfaceLabel(slot, card, pon, model = null) {
+      const normalizedModel = model || (this.olts.find(o => String(o.id) === String(this.onuFilter.olt_id)) || {}).olt_model || 'zte_c600';
+      if (normalizedModel === 'zte_c600' || normalizedModel === 'zte_c320') {
+        return `gpon_olt-${slot}/${card || 1}/${pon}`;
+      }
+      return `gpon-olt_${slot}/${card || 1}/${pon}`;
+    },
+
     async loadOLTPorts(olt) {
       this.selectedOLTForPorts = olt;
       try {
@@ -415,7 +424,7 @@ function app() {
     openONUsByPort(olt, port) {
       this.onuFilter.olt_id = String(olt.id);
       this.loadOLTPortsForFilter();
-      // Formato: portId|slot|card|pon  (sintaxe ZTE: gpon-olt_SLOT/CARD/PON)
+      // Formato: portId|slot|card|pon
       this.onuFilter.port_id = `${port.id}|${port.slot}|${port.card || 1}|${port.pon}`;
       this.setPage('onus');
       this.loadONUStatus(false);
