@@ -40,6 +40,7 @@ def dashboard_analytics(
     model_counts = Counter()
     firmware_counts = Counter()
     state_counts = Counter()
+    onu_items = []
     cached_ports = 0
     cached_onus = 0
     redis_available = cache.is_available()
@@ -78,18 +79,38 @@ def dashboard_analytics(
         onus = status.get("onus") or []
         cached_onus += len(onus)
         for onu in onus:
-            state_counts[(onu.get("oper_state") or "unknown").lower()] += 1
-            signal_counts[(onu.get("olt_rx_status") or "sem leitura").lower()] += 1
-            if onu.get("model"):
-                model_counts[onu["model"]] += 1
+            state = (onu.get("oper_state") or "unknown").lower()
+            signal = (onu.get("olt_rx_status") or "sem leitura").lower()
+            model = onu.get("model") or ""
             fw = (
                 onu.get("firmware")
                 or onu.get("software_version")
                 or onu.get("current_version")
                 or onu.get("version")
+                or ""
             )
+            state_counts[state] += 1
+            signal_counts[signal] += 1
+            if model:
+                model_counts[model] += 1
             if fw:
                 firmware_counts[fw] += 1
+            onu_items.append({
+                "olt_id": olt.id,
+                "olt": olt.name,
+                "slot": port.slot,
+                "card": port.card or 1,
+                "pon": port.pon,
+                "pon_label": _label_pon(olt, port),
+                "onu_index": onu.get("onu_index") or "",
+                "serial": onu.get("serial") or "",
+                "model": model,
+                "firmware": fw,
+                "admin_state": onu.get("admin_state") or "",
+                "oper_state": state,
+                "signal_status": signal,
+                "rx_power": onu.get("olt_rx_power"),
+            })
 
     pon_capacity.sort(key=lambda item: item["onu_count"], reverse=True)
 
@@ -109,4 +130,5 @@ def dashboard_analytics(
         "models": _count_items(model_counts, 15),
         "firmwares": _count_items(firmware_counts, 15),
         "states": _count_items(state_counts),
+        "onus": onu_items,
     }

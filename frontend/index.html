@@ -982,7 +982,7 @@
                 </div>
                 <div style="display:grid;gap:8px">
                   <template x-for="item in (dashboardAnalytics?.signals || [])" :key="item.label">
-                    <div>
+                    <div @click="openDashboardDrilldown('signal', item)" title="Ver ONUs deste sinal" style="cursor:pointer">
                       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
                         <span x-text="signalLabel(item.label)"></span>
                         <span x-text="item.count"></span>
@@ -1002,7 +1002,7 @@
                 </div>
                 <div style="display:grid;gap:8px">
                   <template x-for="item in (dashboardAnalytics?.states || [])" :key="item.label">
-                    <div>
+                    <div @click="openDashboardDrilldown('state', item)" title="Ver ONUs deste estado" style="cursor:pointer">
                       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
                         <span x-text="item.label"></span>
                         <span x-text="item.count"></span>
@@ -1022,7 +1022,7 @@
                 </div>
                 <div style="display:grid;gap:8px">
                   <template x-for="item in (dashboardAnalytics?.models || [])" :key="item.label">
-                    <div>
+                    <div @click="openDashboardDrilldown('model', item)" title="Ver ONUs deste modelo" style="cursor:pointer">
                       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
                         <span x-text="item.label"></span>
                         <span x-text="item.count"></span>
@@ -1042,7 +1042,7 @@
                 </div>
                 <div style="display:grid;gap:8px">
                   <template x-for="item in (dashboardAnalytics?.firmwares || [])" :key="item.label">
-                    <div>
+                    <div @click="openDashboardDrilldown('firmware', item)" title="Ver ONUs deste firmware" style="cursor:pointer">
                       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
                         <span class="td-mono" x-text="item.label"></span>
                         <span x-text="item.count"></span>
@@ -1809,6 +1809,47 @@
       <div style="display:flex;gap:8px;margin-top:22px;justify-content:flex-end">
         <button @click="userModal=false" class="btn btn-ghost">Cancelar</button>
         <button @click="saveUser()" class="btn btn-primary"><i class="fas fa-save mr-1"></i>Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="dashboardDrilldown.show" class="modal-overlay" @click.self="closeDashboardDrilldown()">
+    <div class="modal modal-lg" style="max-width:980px">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fas fa-list"></i>
+          <span x-text="dashboardDrilldownTitle(dashboardDrilldown.type, dashboardDrilldown.label)"></span>
+          <span class="badge badge-blue" x-text="dashboardDrilldown.rows.length"></span>
+        </div>
+        <button @click="closeDashboardDrilldown()" class="btn btn-ghost btn-xs"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="table-wrap" style="max-height:62vh;overflow:auto">
+        <table>
+          <thead>
+            <tr><th>OLT</th><th>PON</th><th>ONU</th><th>Serial</th><th>Modelo</th><th>Sinal</th><th>Estado</th><th>Firmware</th><th>Acoes</th></tr>
+          </thead>
+          <tbody>
+            <template x-for="row in dashboardDrilldown.rows" :key="`${row.olt_id}-${row.onu_index}-${row.serial}`">
+              <tr>
+                <td x-text="row.olt"></td>
+                <td class="td-mono" x-text="row.pon_label"></td>
+                <td class="td-mono td-primary" x-text="row.onu_index"></td>
+                <td class="td-mono" style="color:#e3b341" x-text="row.serial || '-'"></td>
+                <td x-text="row.model || '-'"></td>
+                <td>
+                  <span :class="row.signal_status==='normal'?'badge badge-green':row.signal_status==='warning'?'badge badge-yellow':row.signal_status==='critical'?'badge badge-red':'badge badge-gray'"
+                        x-text="`${signalLabel(row.signal_status)}${row.rx_power !== null && row.rx_power !== undefined ? ' (' + Number(row.rx_power).toFixed(2) + ' dBm)' : ''}`"></span>
+                </td>
+                <td><span :class="row.oper_state==='working'?'badge badge-green':row.oper_state==='los'||row.oper_state==='lof'?'badge badge-red':'badge badge-yellow'" x-text="row.oper_state"></span></td>
+                <td class="td-mono" x-text="row.firmware || '-'"></td>
+                <td><button @click="openONUDetailFromDashboard(row)" class="btn btn-primary btn-xs"><i class="fas fa-info-circle"></i> Detalhes</button></td>
+              </tr>
+            </template>
+            <tr x-show="dashboardDrilldown.rows.length === 0">
+              <td colspan="9"><div class="empty-state" style="padding:28px"><i class="fas fa-list"></i><p>Nenhuma ONU encontrada para esse filtro.</p></div></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

@@ -115,6 +115,7 @@ function app() {
     // Stats
     stats: {},
     dashboardAnalytics: null,
+    dashboardDrilldown: { show: false, type: '', label: '', value: '', rows: [] },
 
     // ============================================================
     // INIT
@@ -326,6 +327,49 @@ function app() {
     signalLabel(label) {
       const map = { normal: 'Bom', warning: 'Ruim', critical: 'Pessimo', 'sem leitura': 'Sem leitura' };
       return map[label] || label;
+    },
+
+    dashboardDrilldownTitle(type, label) {
+      const titles = {
+        signal: 'ONUs por sinal',
+        state: 'ONUs por estado',
+        model: 'ONUs por modelo / marca',
+        firmware: 'ONUs por firmware',
+      };
+      return `${titles[type] || 'ONUs'}: ${label}`;
+    },
+
+    openDashboardDrilldown(type, item) {
+      const value = item.label;
+      const rows = (this.dashboardAnalytics?.onus || []).filter(onu => {
+        if (type === 'signal') return onu.signal_status === value;
+        if (type === 'state') return onu.oper_state === value;
+        if (type === 'model') return onu.model === value;
+        if (type === 'firmware') return onu.firmware === value;
+        return false;
+      });
+      const label = type === 'signal' ? this.signalLabel(value) : value;
+      this.dashboardDrilldown = {
+        show: true,
+        type,
+        label,
+        value,
+        rows,
+      };
+    },
+
+    closeDashboardDrilldown() {
+      this.dashboardDrilldown = { show: false, type: '', label: '', value: '', rows: [] };
+    },
+
+    openONUDetailFromDashboard(row) {
+      const onuId = String(row.onu_index || '').split(':').pop();
+      if (!onuId) return;
+      this.closeDashboardDrilldown();
+      this.onuDetailContext = { oltId: row.olt_id, slot: row.slot, card: row.card || 1, pon: row.pon, onuId };
+      this.onuDetailModal = true;
+      this.detailTab = 'info';
+      this.fetchONUDetail(false);
     },
 
     setPage(p) {
