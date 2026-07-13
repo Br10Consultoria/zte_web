@@ -28,14 +28,14 @@ def _onu_unique_key(olt_id: int, port: OLTPort, onu: dict) -> tuple:
     serial = (onu.get("serial") or "").strip().upper()
     if serial:
         return ("serial", olt_id, serial)
-    return (
-        "index",
-        olt_id,
-        port.slot,
-        port.card or 1,
-        port.pon,
-        (onu.get("onu_index") or "").strip(),
-    )
+    return ("index", olt_id, (onu.get("onu_index") or "").strip())
+
+
+def _onu_belongs_to_port(port: OLTPort, onu: dict) -> bool:
+    idx = (onu.get("onu_index") or "").strip()
+    if not idx:
+        return False
+    return idx.startswith(f"{port.slot}/{port.card or 1}/{port.pon}:")
 
 
 def _onu_quality_score(item: dict) -> int:
@@ -108,6 +108,8 @@ def dashboard_analytics(
         onus = status.get("onus") or []
         raw_cached_onus += len(onus)
         for onu in onus:
+            if not _onu_belongs_to_port(port, onu):
+                continue
             state = (onu.get("oper_state") or "unknown").lower()
             signal = (onu.get("olt_rx_status") or "sem leitura").lower()
             model = onu.get("model") or ""
