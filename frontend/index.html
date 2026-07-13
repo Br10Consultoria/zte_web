@@ -2003,25 +2003,44 @@
         <div x-show="detailTab==='info'">
           <template x-if="onuDetailData && onuDetailData.detail">
             <div class="detail-grid">
-              <div class="detail-item"><div class="detail-label">Interface ONU</div><div class="detail-value mono" x-text="onuDetailData.onu_interface || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Nome</div><div class="detail-value" x-text="onuDetailData.detail.name || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Tipo</div><div class="detail-value" x-text="onuDetailData.detail.onu_type || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Serial Number</div><div class="detail-value mono" style="color:#e3b341" x-text="onuDetailData.detail.serial_number || '—'"></div></div>
-              <div class="detail-item" style="grid-column:span 2"><div class="detail-label">Descrição</div><div class="detail-value" style="color:var(--text-secondary)" x-text="onuDetailData.detail.description || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Admin State</div><div class="detail-value"><span :class="onuDetailData.detail.admin_state==='enable'?'badge badge-green':'badge badge-red'" x-text="onuDetailData.detail.admin_state || '—'"></span></div></div>
-              <div class="detail-item"><div class="detail-label">Phase State</div><div class="detail-value"><span :class="onuDetailData.detail.phase_state==='working'?'badge badge-green':'badge badge-yellow'" x-text="onuDetailData.detail.phase_state || '—'"></span></div></div>
-              <div class="detail-item"><div class="detail-label">Config State</div><div class="detail-value"><span :class="onuDetailData.detail.config_state==='success'?'badge badge-green':'badge badge-red'" x-text="onuDetailData.detail.config_state || '—'"></span></div></div>
-              <div class="detail-item"><div class="detail-label">ONU Status</div><div class="detail-value" x-text="onuDetailData.detail.onu_status || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Distância</div><div class="detail-value mono" style="color:#56d364" x-text="onuDetailData.detail.distance ? onuDetailData.detail.distance + ' m' : '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Tempo Online</div><div class="detail-value" x-text="onuDetailData.detail.online_duration || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Modo Auth</div><div class="detail-value" x-text="onuDetailData.detail.auth_mode || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Line Profile</div><div class="detail-value" x-text="onuDetailData.detail.line_profile || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Service Profile</div><div class="detail-value" x-text="onuDetailData.detail.service_profile || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">DBA Mode</div><div class="detail-value" x-text="onuDetailData.detail.dba_mode || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">FEC</div><div class="detail-value" x-text="onuDetailData.detail.fec || '—'"></div></div>
+              <div class="detail-item"><div class="detail-label">Interface ONU</div><div class="detail-value mono" x-text="onuDetailData.onu_interface || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Vendor</div><div class="detail-value" x-text="onuDetailData.detail.vendor || onuDetailData.equipment?.vendor || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Tipo</div><div class="detail-value" x-text="onuDetailData.detail.onu_type || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Serial Number</div><div class="detail-value mono" style="color:#e3b341" x-text="onuDetailData.detail.serial_number || onuDetailData.equipment?.serial || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Descricao</div><div class="detail-value" style="color:var(--text-secondary)" x-text="onuDetailData.detail.description || '-' "></div></div>
+              <div class="detail-item">
+                <div class="detail-label">Modo de Operacao</div>
+                <div class="detail-value" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                  <select x-model="onuDetailData.annotation.operation_mode" class="input-field" style="height:30px;padding:4px 8px;max-width:130px" x-show="currentUser && currentUser.role === 'admin'">
+                    <option value="auto">Auto</option>
+                    <option value="bridge">Bridge</option>
+                    <option value="router">Router</option>
+                  </select>
+                  <span :class="effectiveONUMode()==='bridge'?'badge badge-blue':effectiveONUMode()==='router'?'badge badge-yellow':'badge badge-gray'" x-text="effectiveONUMode()"></span>
+                </div>
+              </div>
+              <div class="detail-item"><div class="detail-label">Admin State</div><div class="detail-value"><span :class="onuDetailData.detail.admin_state==='enable'?'badge badge-green':'badge badge-red'" x-text="onuDetailData.detail.admin_state || '-' "></span></div></div>
+              <div class="detail-item"><div class="detail-label">Phase State</div><div class="detail-value"><span :class="onuDetailData.detail.phase_state==='working'?'badge badge-green':'badge badge-yellow'" x-text="onuDetailData.detail.phase_state || '-' "></span></div></div>
+              <div class="detail-item"><div class="detail-label">Config State</div><div class="detail-value"><span :class="onuDetailData.detail.config_state==='success'?'badge badge-green':'badge badge-red'" x-text="onuDetailData.detail.config_state || '-' "></span></div></div>
+              <div class="detail-item"><div class="detail-label">ONU Status</div><div class="detail-value" x-text="onuDetailData.detail.onu_status || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Distancia</div><div class="detail-value mono" style="color:#56d364" x-text="onuDetailData.detail.distance ? onuDetailData.detail.distance + ' m' : '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Tempo Online</div><div class="detail-value" x-text="onuDetailData.detail.online_duration || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Ultima Queda</div><div class="detail-value" x-text="onuDetailData.detail.last_down_cause || onuDetailData.status?.last_down_cause || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Firmware CPE</div><div class="detail-value mono" x-text="onuDetailData.detail.firmware_version || onuDetailData.equipment?.version || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">SFP Vendor</div><div class="detail-value" x-text="onuDetailData.sfp_pon?.vendor || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">SFP Classe</div><div class="detail-value" x-text="onuDetailData.sfp_pon?.module_class || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">SFP Temperatura</div><div class="detail-value mono" x-text="onuDetailData.sfp_pon?.temperature !== undefined ? onuDetailData.sfp_pon.temperature + ' C' : '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">SFP Produto</div><div class="detail-value" x-text="onuDetailData.sfp_pon?.product || '-' "></div></div>
+              <div class="detail-item" style="grid-column:span 2">
+                <div class="detail-label">Comentario</div>
+                <div style="display:flex;gap:8px">
+                  <input x-model="onuDetailData.annotation.comment" class="input-field" placeholder="Ex: CPE em router mesmo com template bridge" :disabled="!currentUser || currentUser.role !== 'admin'" />
+                  <button @click="saveONUAnnotation()" class="btn btn-primary btn-sm" x-show="currentUser && currentUser.role === 'admin'"><i class="fas fa-save"></i> Salvar</button>
+                </div>
+              </div>
             </div>
           </template>
-          <div x-show="!onuDetailData || !onuDetailData.detail" class="empty-state" style="padding:24px"><i class="fas fa-info-circle" style="font-size:24px"></i><p>Dados não disponíveis.</p></div>
+          <div x-show="!onuDetailData || !onuDetailData.detail" class="empty-state" style="padding:24px"><i class="fas fa-info-circle" style="font-size:24px"></i><p>Dados nao disponiveis.</p></div>
         </div>
 
         <!-- Estado -->
@@ -2094,6 +2113,21 @@
                   <span><span class="power-dot power-critical" style="display:inline-block;margin-right:5px;vertical-align:middle"></span>&lt; -29 dBm = Crítico</span>
                 </div>
               </div>
+              <div class="table-wrap" style="margin-top:12px" x-show="onuDetailData.signal_history && onuDetailData.signal_history.length">
+                <table>
+                  <thead><tr><th>Data</th><th>RX ONU</th><th>RX OLT</th><th>Status</th></tr></thead>
+                  <tbody>
+                    <template x-for="item in onuDetailData.signal_history.slice(-20).reverse()" :key="item.timestamp">
+                      <tr>
+                        <td class="td-mono" x-text="item.label || item.timestamp"></td>
+                        <td class="td-mono" x-text="item.rx_power !== null && item.rx_power !== undefined ? item.rx_power + ' dBm' : '-' "></td>
+                        <td class="td-mono" x-text="item.olt_rx_power !== null && item.olt_rx_power !== undefined ? item.olt_rx_power + ' dBm' : '-' "></td>
+                        <td><span :class="item.rx_status==='normal'?'badge badge-green':item.rx_status==='warning'?'badge badge-yellow':item.rx_status==='critical'?'badge badge-red':'badge badge-gray'" x-text="item.rx_status || '-' "></span></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </template>
           <div x-show="!onuDetailData || !onuDetailData.power" class="empty-state" style="padding:24px"><i class="fas fa-bolt" style="font-size:24px"></i><p>Dados de potência não disponíveis.</p></div>
@@ -2102,15 +2136,32 @@
         <!-- WAN -->
         <div x-show="detailTab==='wan'">
           <template x-if="onuDetailData && onuDetailData.wan">
-            <div class="detail-grid">
-              <div class="detail-item"><div class="detail-label">Tipo de Conexão</div><div class="detail-value" x-text="onuDetailData.wan.connection_type || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value"><span :class="onuDetailData.wan.status==='Connected'||onuDetailData.wan.status==='connected'?'badge badge-green':onuDetailData.wan.status==='Connecting'?'badge badge-yellow':'badge badge-red'" x-text="onuDetailData.wan.status || '—'"></span></div></div>
-              <div class="detail-item"><div class="detail-label">IP WAN</div><div class="detail-value mono" x-text="onuDetailData.wan.ip_address || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Gateway</div><div class="detail-value mono" x-text="onuDetailData.wan.gateway || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">DNS</div><div class="detail-value mono" x-text="onuDetailData.wan.dns || '—'"></div></div>
+            <div>
+              <div class="detail-grid mb-3">
+                <div class="detail-item"><div class="detail-label">VLAN Principal</div><div class="detail-value mono" x-text="onuDetailData.wan.primary_vlan || '-' "></div></div>
+                <div class="detail-item"><div class="detail-label">VLANs Encontradas</div><div class="detail-value mono" x-text="onuDetailData.wan.vlans && onuDetailData.wan.vlans.length ? onuDetailData.wan.vlans.join(', ') : '-' "></div></div>
+                <div class="detail-item"><div class="detail-label">Modo Detectado</div><div class="detail-value"><span :class="onuDetailData.wan.operation_mode_detected==='bridge'?'badge badge-blue':'badge badge-gray'" x-text="onuDetailData.wan.operation_mode_detected || '-' "></span></div></div>
+                <div class="detail-item"><div class="detail-label">Servicos</div><div class="detail-value" x-text="onuDetailData.wan.services ? onuDetailData.wan.services.length : 0"></div></div>
+              </div>
+              <div class="table-wrap" x-show="onuDetailData.wan.services && onuDetailData.wan.services.length">
+                <table>
+                  <thead><tr><th>Service</th><th>GEM</th><th>IfId</th><th>CoS</th><th>VLAN</th></tr></thead>
+                  <tbody>
+                    <template x-for="svc in onuDetailData.wan.services" :key="`${svc.service_name}-${svc.gem_port}-${svc.vlan}`">
+                      <tr>
+                        <td x-text="svc.service_name"></td>
+                        <td class="td-mono" x-text="svc.gem_port"></td>
+                        <td class="td-mono" x-text="svc.if_id"></td>
+                        <td class="td-mono" x-text="svc.cos"></td>
+                        <td class="td-mono" x-text="svc.vlan"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </template>
-          <div x-show="!onuDetailData || !onuDetailData.wan" class="empty-state" style="padding:24px"><i class="fas fa-globe" style="font-size:24px"></i><p>Dados WAN não disponíveis.</p></div>
+          <div x-show="!onuDetailData || !onuDetailData.wan" class="empty-state" style="padding:24px"><i class="fas fa-globe" style="font-size:24px"></i><p>Dados de VLAN/WAN nao disponiveis.</p></div>
         </div>
 
         <!-- VoIP -->
@@ -2126,14 +2177,15 @@
 
         <!-- Firmware -->
         <div x-show="detailTab==='firmware'">
-          <template x-if="onuDetailData && onuDetailData.firmware">
+          <template x-if="onuDetailData && (onuDetailData.firmware || onuDetailData.equipment)">
             <div class="detail-grid">
-              <div class="detail-item"><div class="detail-label">Versão Atual</div><div class="detail-value mono" x-text="onuDetailData.firmware.current_version || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Versão Ativa</div><div class="detail-value mono" x-text="onuDetailData.firmware.active_version || '—'"></div></div>
-              <div class="detail-item"><div class="detail-label">Versão Backup</div><div class="detail-value mono" x-text="onuDetailData.firmware.backup_version || '—'"></div></div>
+              <div class="detail-item"><div class="detail-label">Vendor</div><div class="detail-value" x-text="onuDetailData.firmware?.vendor || onuDetailData.equipment?.vendor || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Version</div><div class="detail-value mono" x-text="onuDetailData.firmware?.current_version || onuDetailData.equipment?.version || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Serial Equip</div><div class="detail-value mono" x-text="onuDetailData.firmware?.serial || onuDetailData.equipment?.serial || '-' "></div></div>
+              <div class="detail-item"><div class="detail-label">Versao Ativa</div><div class="detail-value mono" x-text="onuDetailData.firmware?.active_version || '-' "></div></div>
             </div>
           </template>
-          <div x-show="!onuDetailData || !onuDetailData.firmware" class="empty-state" style="padding:24px"><i class="fas fa-microchip" style="font-size:24px"></i><p>Dados de firmware não disponíveis.</p></div>
+          <div x-show="!onuDetailData || (!onuDetailData.firmware && !onuDetailData.equipment)" class="empty-state" style="padding:24px"><i class="fas fa-microchip" style="font-size:24px"></i><p>Dados de firmware nao disponiveis.</p></div>
         </div>
 
         <!-- Tráfego em Tempo Real -->

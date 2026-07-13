@@ -89,6 +89,15 @@ class OLTDriver:
     def cmd_onu_power(self, onu_iface: str) -> str:
         raise NotImplementedError
 
+    def cmd_onu_service(self, onu_iface: str) -> str:
+        return f"show gpon remote-onu service {onu_iface}"
+
+    def cmd_onu_equip(self, onu_iface: str) -> str:
+        return f"show gpon remote-onu equip {onu_iface}"
+
+    def cmd_optical_module(self, olt_iface: str) -> str:
+        return f"show optical-module-info {olt_iface}"
+
     def cmd_onu_reboot(self, onu_iface: str) -> List[str]:
         """
         Retorna lista de comandos para reiniciar a ONU.

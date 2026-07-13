@@ -802,6 +802,87 @@ def parse_onu_power(output: str, onu_index: str) -> Dict:
     return result
 
 
+def parse_remote_onu_service(output: str) -> Dict:
+    """Parseia show gpon remote-onu service e extrai VLANs configuradas."""
+    services = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith("-") or line.lower().startswith("service name"):
+            continue
+        parts = line.split()
+        if len(parts) >= 5 and parts[-1].isdigit():
+            services.append({
+                "service_name": parts[0],
+                "gem_port": parts[1],
+                "if_id": parts[2],
+                "cos": parts[3],
+                "vlan": int(parts[4]),
+            })
+    vlans = sorted({s["vlan"] for s in services})
+    return {
+        "services": services,
+        "vlans": vlans,
+        "primary_vlan": vlans[0] if vlans else None,
+        "operation_mode_detected": "bridge" if vlans else None,
+    }
+
+
+def parse_remote_onu_equip(output: str) -> Dict:
+    """Parseia show gpon remote-onu equip para vendor, firmware/version e serial."""
+    result = {}
+    fields = {
+        "vendor": r"Vendor ID\s*:\s*(.+)",
+        "version": r"Version\s*:\s*(.+)",
+        "serial": r"SN\s*:\s*(.+)",
+    }
+    for key, pattern in fields.items():
+        m = re.search(pattern, output, re.IGNORECASE)
+        if m:
+            result[key] = m.group(1).strip()
+    if result.get("version"):
+        result["firmware"] = result["version"]
+    return result
+
+
+def parse_optical_module_info(output: str) -> Dict:
+    """Parseia dados principais de show optical-module-info da porta PON."""
+    result = {}
+    patterns = {
+        "position": r"Optical Module Position\s*:\s*(.+)",
+        "power_state": r"Optical Module Power State\s*:\s*(.+)",
+        "state": r"Optical Module State\s*:\s*(.+)",
+        "vendor": r"Vendor-Name\s*:\s*(\S+)",
+        "product": r"Product-Name\s*:\s*(\S+)",
+        "sequence_number": r"Sequence-Number\s*:\s*(\S+)",
+        "version_level": r"Version-Level\s*:\s*(\S+)",
+        "product_date": r"Product-Date\s*:\s*(\S+)",
+        "module_type": r"Module-Type\s*:\s*([^\n]+?)(?:\s{2,}|$)",
+        "supply_voltage": r"Supply-Vol\s*:\s*([-\d.]+)\(v\)",
+        "connector": r"Connector\s*:\s*(\S+)",
+        "temperature": r"Temperature\s*:\s*([-\d.]+)\(c\)",
+        "fiber_type": r"Fiber-Type\s*:\s*(\S+)",
+        "module_class": r"Module-Class\s*:\s*([A-Za-z0-9/+.-]+)",
+        "tx_power": r"TxPower\s*:\s*([-\d.]+)\(dbm\)",
+        "wavelength": r"Wavelength\s*:\s*(\d+)\s*\(nm\)",
+        "tx_bias_current": r"TxBias-Current\s*:\s*([-\d.]+)\(mA\)",
+        "tx_fault": r"Tx-Fault\s*:\s*(\S+)",
+        "los_state": r"Los-State\s*:\s*(\S+)",
+    }
+    for key, pattern in patterns.items():
+        m = re.search(pattern, output, re.IGNORECASE)
+        if not m:
+            continue
+        value = m.group(1).strip()
+        if key in {"temperature", "supply_voltage", "tx_power", "tx_bias_current"}:
+            try:
+                result[key] = float(value)
+            except ValueError:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
+
+
 def parse_onu_baseinfo(output: str) -> List[Dict]:
     """
     Parseia: show gpon onu baseinfo gpon-olt_1/2/2
@@ -1169,7 +1250,49 @@ def get_onu_full_details(ip: str, port: int, username: str, password: str,
         result["power"] = parse_onu_power(out, onu_idx)
         _log("debug", f"[ONU_FULL] Power parsed: {result['power']}")
 
-        # 3. Estado operacional (da lista da porta)
+        # 3. VLAN/service configurado na CPE
+        try:
+            cmd_service = driver.cmd_onu_service(onu_ref) if driver else f"show gpon remote-onu service {onu_ref}"
+            _log("info", f"[ONU_FULL] {cmd_service}")
+            out = client.execute_command(cmd_service, timeout=15)
+            service_info = parse_remote_onu_service(out)
+            if service_info.get("services") or service_info.get("vlans"):
+                result["wan"] = service_info
+        except Exception as e:
+            _log("warning", f"[ONU_FULL] Falha ao coletar service/VLAN {onu_ref}: {e}")
+
+        # 4. Vendor/firmware da CPE
+        try:
+            cmd_equip = driver.cmd_onu_equip(onu_ref) if driver else f"show gpon remote-onu equip {onu_ref}"
+            _log("info", f"[ONU_FULL] {cmd_equip}")
+            out = client.execute_command(cmd_equip, timeout=15)
+            equip_info = parse_remote_onu_equip(out)
+            if equip_info:
+                result["equipment"] = equip_info
+                result["firmware"] = {
+                    "current_version": equip_info.get("version"),
+                    "active_version": equip_info.get("version"),
+                    "vendor": equip_info.get("vendor"),
+                    "serial": equip_info.get("serial"),
+                }
+                result["detail"]["vendor"] = equip_info.get("vendor")
+                result["detail"]["remote_serial"] = equip_info.get("serial")
+                result["detail"]["firmware_version"] = equip_info.get("version")
+        except Exception as e:
+            _log("warning", f"[ONU_FULL] Falha ao coletar equip {onu_ref}: {e}")
+
+        # 5. SFP/modulo optico da porta PON
+        try:
+            cmd_optical = driver.cmd_optical_module(olt_ref) if driver else f"show optical-module-info {olt_ref}"
+            _log("info", f"[ONU_FULL] {cmd_optical}")
+            out = client.execute_command(cmd_optical, timeout=15)
+            sfp_info = parse_optical_module_info(out)
+            if sfp_info:
+                result["sfp_pon"] = sfp_info
+        except Exception as e:
+            _log("warning", f"[ONU_FULL] Falha ao coletar modulo optico {olt_ref}: {e}")
+
+        # 6. Estado operacional (da lista da porta)
         cmd_state = driver.cmd_onu_state(olt_ref) if driver else f"show gpon onu state {olt_ref}"
         _log("info", f"[ONU_FULL] {cmd_state}")
         out = client.execute_command(cmd_state, timeout=20)

@@ -654,6 +654,27 @@ function app() {
       await this.fetchONUDetail(true);
     },
 
+    effectiveONUMode() {
+      const ann = this.onuDetailData?.annotation?.operation_mode;
+      if (ann && ann !== 'auto') return ann;
+      return this.onuDetailData?.wan?.operation_mode_detected || 'auto';
+    },
+
+    async saveONUAnnotation() {
+      if (!this.onuDetailContext || !this.onuDetailData) return;
+      const { oltId, slot, card, pon, onuId } = this.onuDetailContext;
+      const annotation = this.onuDetailData.annotation || { operation_mode: 'auto', comment: '' };
+      try {
+        const res = await this.apiPut(`/onus/${oltId}/pon/${slot}/${card}/${pon}/onu/${onuId}/annotation`, annotation);
+        const data = await this.safeJson(res);
+        if (!res.ok) throw new Error(data.detail || 'Erro ao salvar anotacao');
+        this.onuDetailData.annotation = data;
+        this.showToast('Anotacao salva!', 'success');
+      } catch (e) {
+        this.showToast(e.message, 'error');
+      }
+    },
+
     async rebootONU() {
       if (!this.onuDetailContext) return;
       const { oltId, slot, card, pon, onuId } = this.onuDetailContext;

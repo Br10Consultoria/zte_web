@@ -129,3 +129,18 @@ class ProvisionTemplate(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ONUAnnotation(Base):
+    __tablename__ = "onu_annotations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    olt_id = Column(Integer, ForeignKey("olts.id"), nullable=False)
+    slot = Column(Integer, nullable=False)
+    card = Column(Integer, nullable=False, default=1)
+    pon = Column(Integer, nullable=False)
+    onu_id = Column(Integer, nullable=False)
+    operation_mode = Column(String(20), nullable=True)  # bridge | router | auto
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

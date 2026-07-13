@@ -8,7 +8,7 @@ import logging
 import re
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 try:
     from zoneinfo import ZoneInfo
@@ -22,7 +22,7 @@ def _now_iso():
     return datetime.now().strftime('%d/%m/%Y %H:%M:%S')
 
 from ..database import get_db
-from ..models import User, OLT, OLTPort, ProvisionTemplate
+from ..models import User, OLT, OLTPort, ProvisionTemplate, ONUAnnotation
 from ..auth import get_current_user
 from ..olt_client import (
     get_olt_client, OLTConnectionError,
@@ -51,6 +51,61 @@ def _get_port(olt_id: int, slot: int, card: int, pon: int, db: Session) -> Optio
         OLTPort.card == card,
         OLTPort.pon == pon
     ).first()
+
+
+def _annotation_dict(annotation: Optional[ONUAnnotation]) -> dict:
+    if not annotation:
+        return {"operation_mode": "auto", "comment": ""}
+    return {
+        "operation_mode": annotation.operation_mode or "auto",
+        "comment": annotation.comment or "",
+    }
+
+
+def _get_annotation(db: Session, olt_id: int, slot: int, card: int, pon: int, onu_id: int) -> Optional[ONUAnnotation]:
+    return db.query(ONUAnnotation).filter(
+        ONUAnnotation.olt_id == olt_id,
+        ONUAnnotation.slot == slot,
+        ONUAnnotation.card == card,
+        ONUAnnotation.pon == pon,
+        ONUAnnotation.onu_id == onu_id,
+    ).first()
+
+
+def _signal_history_key(olt_id: int, slot: int, card: int, pon: int, onu_id: int) -> str:
+    return f"olt:{olt_id}:onu:{slot}:{card}:{pon}:{onu_id}:signal_history"
+
+
+def _record_signal_history(olt_id: int, slot: int, card: int, pon: int, onu_id: int, result: dict) -> list:
+    power = result.get("power") or {}
+    rx_power = power.get("rx_power")
+    if rx_power is None:
+        rx_power = power.get("onu_rx_power")
+    olt_rx_power = power.get("olt_rx_power")
+    key = _signal_history_key(olt_id, slot, card, pon, onu_id)
+    history = cache.get(key) or []
+    cutoff = datetime.now() - timedelta(days=30)
+
+    pruned = []
+    for item in history:
+        try:
+            ts = datetime.fromisoformat(str(item.get("timestamp")))
+        except Exception:
+            continue
+        if ts >= cutoff:
+            pruned.append(item)
+
+    if rx_power is not None or olt_rx_power is not None:
+        pruned.append({
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "label": _now_iso(),
+            "rx_power": rx_power,
+            "olt_rx_power": olt_rx_power,
+            "rx_status": power.get("rx_status") or power.get("onu_rx_status"),
+        })
+
+    cache.set(key, pruned, ttl=30 * 24 * 3600)
+    return pruned
 
 
 def _template_dict(tpl: ProvisionTemplate) -> dict:
@@ -312,6 +367,8 @@ def get_onu_full_info(
             cached_data["cached"] = True
             cache_info = cache.get_cache_info(cache_key)
             cached_data["cache_expires_in"] = cache_info.get("expires_in")
+            cached_data["annotation"] = _annotation_dict(_get_annotation(db, olt_id, slot, card, pon, onu_id))
+            cached_data["signal_history"] = cache.get(_signal_history_key(olt_id, slot, card, pon, onu_id)) or []
             return cached_data
 
     try:
@@ -323,6 +380,18 @@ def get_onu_full_info(
         result["olt_id"]  = olt_id
         result["cached"]  = False
         result["last_updated"] = _now_iso()
+        result["annotation"] = _annotation_dict(_get_annotation(db, olt_id, slot, card, pon, onu_id))
+        result["signal_history"] = _record_signal_history(olt_id, slot, card, pon, onu_id, result)
+
+        detail = result.get("detail") or {}
+        history = detail.get("history") or []
+        if history and not detail.get("last_down_cause"):
+            last_event = history[-1]
+            detail["last_down_cause"] = last_event.get("cause")
+            detail["last_offline_time"] = last_event.get("offline_time")
+        if result.get("status") and result["status"].get("last_down_cause") and not detail.get("last_down_cause"):
+            detail["last_down_cause"] = result["status"].get("last_down_cause")
+        result["detail"] = detail
 
         cache.set(cache_key, result)
         return result
@@ -333,6 +402,45 @@ def get_onu_full_info(
     except Exception as e:
         logger.error(f"[ONU_FULL] Erro inesperado: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+
+@router.put("/{olt_id}/pon/{slot}/{card}/{pon}/onu/{onu_id}/annotation")
+def save_onu_annotation(
+    olt_id: int,
+    slot: int,
+    card: int,
+    pon: int,
+    onu_id: int,
+    body: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Salva modo de operacao e comentario manual da ONU."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem editar anotacoes")
+    _get_olt_or_404(olt_id, db)
+    mode = (body.get("operation_mode") or "auto").strip().lower()
+    if mode not in ("auto", "bridge", "router"):
+        raise HTTPException(status_code=400, detail="Modo de operacao invalido")
+
+    annotation = _get_annotation(db, olt_id, slot, card, pon, onu_id)
+    if not annotation:
+        annotation = ONUAnnotation(
+            olt_id=olt_id,
+            slot=slot,
+            card=card,
+            pon=pon,
+            onu_id=onu_id,
+            created_at=datetime.utcnow(),
+        )
+        db.add(annotation)
+    annotation.operation_mode = mode
+    annotation.comment = (body.get("comment") or "").strip()
+    annotation.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(annotation)
+    cache.delete(f"olt:{olt_id}:onu:{slot}:{card}:{pon}:{onu_id}:full")
+    return _annotation_dict(annotation)
 
 
 @router.get("/{olt_id}/unconfigured")

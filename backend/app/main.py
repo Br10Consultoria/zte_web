@@ -309,3 +309,24 @@ write"""
                 print("✅ Template padrão de provisionamento criado")
         except Exception as e:
             print(f"⚠️  Provision templates seed: {e}")
+
+
+        try:
+            conn.execute(sa.text("""
+                CREATE TABLE IF NOT EXISTS onu_annotations (
+                    id INTEGER PRIMARY KEY,
+                    olt_id INTEGER NOT NULL,
+                    slot INTEGER NOT NULL,
+                    card INTEGER NOT NULL DEFAULT 1,
+                    pon INTEGER NOT NULL,
+                    onu_id INTEGER NOT NULL,
+                    operation_mode VARCHAR(20),
+                    comment TEXT,
+                    created_at DATETIME,
+                    updated_at DATETIME,
+                    FOREIGN KEY(olt_id) REFERENCES olts(id)
+                )
+            """))
+            conn.commit()
+        except Exception as e:
+            print(f"ONU annotations migration: {e}")
