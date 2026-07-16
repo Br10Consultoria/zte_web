@@ -10,7 +10,7 @@ Este documento descreve a arquitetura e a estrutura do sistema web para gerencia
 - **Autenticação**: JWT (JSON Web Tokens) + **2FA TOTP** (Google Authenticator / Authy) com QR Code.
 - **Frontend**: HTML5, **Tailwind CSS** (estilizado para fontes de no máximo 12px, tema escuro/profissional), **Alpine.js** (reatividade simples sem necessidade de build complexo).
 - **Integração OLT**: SSH (via `paramiko`) e SNMP (via `pysnmp` ou consultas diretas).
-- **Containerização**: **Docker** e **Docker Compose** para fácil implantação local.
+- **Containerização**: **Docker** e **Docker Compose** como padrao unico de implantacao.
 
 ## Estrutura de Diretórios
 

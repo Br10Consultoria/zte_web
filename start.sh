@@ -1,61 +1,18 @@
 #!/bin/bash
-# ============================================================
-# ZTE Titan Manager - Script de Inicialização (sem Docker)
-# ============================================================
+# Docker-only startup helper.
 
-set -e
+set -euo pipefail
 
-echo "=============================================="
-echo "  ZTE Titan Manager - Inicializando..."
-echo "=============================================="
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-zte_titan}"
 
-# Verifica Python
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 não encontrado. Instale Python 3.11+"
+if docker compose version >/dev/null 2>&1; then
+    docker compose -p "$PROJECT_NAME" up -d
+elif command -v docker-compose >/dev/null 2>&1; then
+    docker-compose -p "$PROJECT_NAME" up -d
+else
+    echo "Docker Compose nao encontrado. Execute: sudo bash install.sh"
     exit 1
 fi
 
-# Verifica Redis
-if ! command -v redis-server &> /dev/null && ! systemctl is-active --quiet redis 2>/dev/null; then
-    echo "⚠️  Redis não encontrado ou não está rodando."
-    echo "   O sistema funcionará sem cache. Para instalar:"
-    echo "   Ubuntu/Debian: sudo apt install redis-server && sudo systemctl start redis"
-    echo "   CentOS/RHEL:   sudo yum install redis && sudo systemctl start redis"
-fi
-
-# Cria e ativa ambiente virtual
-if [ ! -d "venv" ]; then
-    echo "📦 Criando ambiente virtual Python..."
-    python3 -m venv venv
-fi
-
-source venv/bin/activate
-
-# Instala dependências
-echo "📦 Instalando dependências..."
-pip install --quiet --upgrade pip
-pip install --quiet -r backend/requirements.txt
-
-# Cria arquivo .env se não existir
-if [ ! -f ".env" ]; then
-    cp .env.example .env
-    echo "✅ Arquivo .env criado a partir do .env.example"
-    echo "⚠️  IMPORTANTE: Edite o .env e altere o SECRET_KEY!"
-fi
-
-# Cria diretório de dados
-mkdir -p data
-
-# Inicia o servidor
-echo ""
-echo "=============================================="
-echo "  ✅ Iniciando ZTE Titan Manager..."
-echo "  🌐 Acesse: http://localhost:8000"
-echo "  👤 Login padrão: admin / Admin@2024!"
-echo "  📖 API Docs: http://localhost:8000/api/docs"
-echo "=============================================="
-echo ""
-
-cd backend
-DATABASE_URL="sqlite:///$(pwd)/../data/zte_titan.db" \
-    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+echo "ZTE Titan Manager iniciado em http://localhost:8000"
+echo "Logs: docker compose -p ${PROJECT_NAME} logs -f app"

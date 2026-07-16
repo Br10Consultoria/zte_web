@@ -17,16 +17,12 @@ except AttributeError:
 from .config import settings
 
 
-# Resolve o diretório raiz do projeto de forma robusta:
-# - No Docker (WORKDIR=/app, COPY . .): __file__ = /app/app/main.py -> raiz = /app
-# - Local sem Docker (cd backend; uvicorn): __file__ = .../backend/app/main.py -> raiz = .../zte_titan
+# Resolve o diretório raiz do projeto no container Docker.
 # A variável APP_ROOT_DIR pode ser definida manualmente para sobrescrever.
 _APP_FILE_DIR = os.path.dirname(os.path.abspath(__file__))  # .../app/
 _BACKEND_DIR  = os.path.dirname(_APP_FILE_DIR)               # .../backend/ ou /app
 _ROOT_DIR     = os.environ.get(
     "APP_ROOT_DIR",
-    # No Docker: /app/app/../ = /app (correto)
-    # Local:     .../backend/app/../ = .../backend (errado, precisa subir mais um)
     os.path.dirname(_BACKEND_DIR) if os.path.isdir(os.path.join(os.path.dirname(_BACKEND_DIR), "frontend")) else _BACKEND_DIR
 )
 
