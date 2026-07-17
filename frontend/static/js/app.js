@@ -22,9 +22,6 @@ function app() {
     page: 'dashboard',
     sidebarCollapsed: false,
 
-    // Tema
-    lightTheme: false,
-
     // Toast
     toast: { show: false, message: '', type: 'info' },
 
@@ -150,12 +147,9 @@ function app() {
         this.logoExists = false;
       }
 
-      // Restaurar tema salvo
-      const savedTheme = localStorage.getItem('br10_theme');
-      if (savedTheme === 'light') {
-        this.lightTheme = true;
-        document.body.classList.add('light-theme');
-      }
+      // A interface utiliza exclusivamente o tema claro.
+      document.body.classList.add('light-theme');
+      localStorage.removeItem('br10_theme');
 
       const token = localStorage.getItem('zte_token');
       const user = localStorage.getItem('zte_user');
@@ -166,20 +160,6 @@ function app() {
         if (this.currentUser.role === 'admin') {
           await this.loadUsers();
         }
-      }
-    },
-
-    // ============================================================
-    // TEMA
-    // ============================================================
-    toggleTheme() {
-      this.lightTheme = !this.lightTheme;
-      if (this.lightTheme) {
-        document.body.classList.add('light-theme');
-        localStorage.setItem('br10_theme', 'light');
-      } else {
-        document.body.classList.remove('light-theme');
-        localStorage.setItem('br10_theme', 'dark');
       }
     },
 

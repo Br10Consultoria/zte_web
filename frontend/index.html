@@ -252,21 +252,6 @@
     body.light-theme .sidebar-user { border-top: 1px solid rgba(26,111,245,0.12); }
     body.light-theme .sidebar-legend { border-top: 1px solid rgba(26,111,245,0.12); }
 
-    /* ── Botão de tema ─────────────────────────────────────── */
-    .theme-toggle {
-      width: 34px; height: 34px;
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer;
-      border: 1px solid var(--border);
-      background: var(--bg-hover);
-      color: var(--text-secondary);
-      transition: all 0.2s;
-      font-size: 14px;
-      flex-shrink: 0;
-    }
-    .theme-toggle:hover { color: var(--accent); border-color: var(--accent-border); background: var(--accent-glow); }
-
     /* ── Topbar ────────────────────────────────────────────────── */
     .topbar {
       height: var(--topbar-h);
@@ -785,7 +770,6 @@
     .login-logo .brand-sub { color: #667b8c; }
     .login-card .form-label { color: #38566b; }
     .login-card .input-field { background: #fff; color: #163047; border-color: #d8e4ea; }
-    .theme-toggle { background: #f7fafb; color: #577184; }
     .sidebar-logo { justify-content:center; }
     .sidebar-logo .logo-icon { width: 188px; height: 68px; }
     .sidebar-logo .logo-icon img { width: 188px; height: 68px; object-fit:contain; }
@@ -831,7 +815,7 @@
   <!-- ══════════════════════════════════════════════════════════════ -->
   <!-- LOGIN                                                          -->
   <!-- ══════════════════════════════════════════════════════════════ -->
-  <div x-show="!isLoggedIn" class="login-wrap" :class="lightTheme ? 'light-theme' : ''" x-init="lightTheme = localStorage.getItem('br10_theme') === 'light'">
+  <div x-show="!isLoggedIn" class="login-wrap light-theme">
     <div class="login-card">
       <div class="login-logo">
         <template x-if="logoExists">
@@ -1049,11 +1033,6 @@
             <span class="power-dot" :class="stats.redis ? 'power-normal' : 'power-critical'"></span>
             <span x-text="stats.redis ? 'Redis Online' : 'Redis Offline'"></span>
           </span>
-          <div style="width:1px;height:20px;background:var(--border-dim)"></div>
-          <!-- Botão de tema -->
-          <button @click="toggleTheme()" class="theme-toggle" :title="lightTheme ? 'Mudar para tema escuro' : 'Mudar para tema claro'">
-            <i :class="lightTheme ? 'fas fa-moon' : 'fas fa-sun'"></i>
-          </button>
           <div style="width:1px;height:20px;background:var(--border-dim)"></div>
           <div style="display:flex;align-items:center;gap:7px">
             <div class="user-avatar" style="width:28px;height:28px;font-size:11px" x-text="currentUser ? currentUser.username[0].toUpperCase() : 'U'"></div>
