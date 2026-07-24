@@ -333,13 +333,25 @@ class OLTTelnetClient:
             self.tn = SimpleTelnet(self.ip, self.port, timeout=settings.SSH_TIMEOUT)
             self.tn.open()
 
-            # Aguarda prompt de usuário.
-            # ZTE C600/C610 exibe aviso de segurança antes do prompt:
-            #   "Warning: Telnet is not a secure protocol..."
-            # Precisamos aguardar completamente antes de enviar o login.
-            data = self.tn.read_until(b"Username:", timeout=25)
+            # Aguarda prompt de usuario antes de enviar login. A Parks 3000/4000
+            # primeiro exibe "Press <RETURN> to get started" e so depois do ENTER
+            # mostra Username/Password.
+            data = self.tn.read_very_eager(wait=1.5)
+            decoded_pre = data.decode("utf-8", errors="replace")
+            if "press <return>" in decoded_pre.lower() or "press return" in decoded_pre.lower():
+                _log("debug", "[TELNET] Banner Parks detectado; enviando ENTER inicial")
+                self.tn.write(b"\n")
+                time.sleep(0.5)
+                data += self.tn.read_until(b"Username:", timeout=15)
+            elif "Username:" not in decoded_pre:
+                data += self.tn.read_until(b"Username:", timeout=25)
             decoded_pre = data.decode("utf-8", errors="replace")
             _log("debug", f"[TELNET] Recebido antes de Username: {decoded_pre[-200:]}")
+            if "Username:" not in decoded_pre:
+                raise OLTConnectionError(
+                    f"Login Telnet falhou - prompt Username nao encontrado. "
+                    f"Resposta: {decoded_pre[-200:]}"
+                )
 
             # Pequena pausa para garantir que todas as negociações IAC foram processadas
             time.sleep(0.3)
