@@ -775,8 +775,9 @@
     .sidebar-logo .logo-icon img { width: 208px; height: 110px; object-fit:contain; }
     .topbar-system { display:flex;align-items:center;gap:6px;min-width:0;margin-left:8px;flex:1;overflow-x:auto; }
     .system-chip { display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:5px 9px;border:1px solid var(--border);border-radius:7px;background:var(--bg-surface);color:var(--text-secondary);font-size:10.5px;white-space:nowrap; }
-    .system-chip i { color: var(--accent); }
-    .system-chip strong { color: var(--text-primary); font-weight:700; }
+    .system-chip { border-color:rgba(237,132,34,.35);background:rgba(237,132,34,.07); }
+    .system-chip i,
+    .system-chip strong { color:#ed8422; font-weight:700; }
     .metric-track { height:8px;background:#163b55;border-radius:4px;overflow:hidden; }
     body.light-theme .metric-track { background:#d8e4ea; }
     .sidebar-legend { border-top-color:#d8e4ea; }
@@ -918,6 +919,9 @@
         <div @click="setPage('search')" :class="{'active': page==='search'}" class="nav-item" title="Buscar ONU">
           <i class="fas fa-magnifying-glass"></i><span class="nav-label">Buscar ONU</span>
         </div>
+        <div @click="setPage('history')" :class="{'active': page==='history'}" class="nav-item" title="Históricos">
+          <i class="fas fa-clock-rotate-left"></i><span class="nav-label">Históricos</span>
+        </div>
         <template x-if="currentUser && currentUser.role === 'admin'">
           <div @click="setPage('backups')" :class="{'active': page==='backups'}" class="nav-item" title="Backups">
             <i class="fas fa-cloud-arrow-up"></i><span class="nav-label">Backups</span>
@@ -1018,11 +1022,12 @@
           <i class="fas fa-bars"></i>
         </button>
         <div class="topbar-title" x-show="page !== 'dashboard'">
-          <i :class="page==='dashboard'?'fas fa-gauge-high':page==='olts'?'fas fa-server':page==='onus'?'fas fa-network-wired':page==='uncfg'?'fas fa-circle-exclamation':page==='search'?'fas fa-magnifying-glass':page==='backups'?'fas fa-cloud-arrow-up':page==='users'?'fas fa-users':'fas fa-user-gear'"></i>
-          <span x-text="page==='dashboard'?'Dashboard':page==='olts'?'Gerenciamento de OLTs':page==='onus'?'Status das ONUs':page==='uncfg'?'ONUs Não Provisionadas':page==='search'?'Buscar ONU por Serial':page==='backups'?'Backups de OLT':page==='users'?'Gerenciamento de Usuários':'Meu Perfil'"></span>
+          <i :class="page==='dashboard'?'fas fa-gauge-high':page==='olts'?'fas fa-server':page==='onus'?'fas fa-network-wired':page==='uncfg'?'fas fa-circle-exclamation':page==='search'?'fas fa-magnifying-glass':page==='history'?'fas fa-clock-rotate-left':page==='backups'?'fas fa-cloud-arrow-up':page==='users'?'fas fa-users':'fas fa-user-gear'"></i>
+          <span x-text="page==='dashboard'?'Dashboard':page==='olts'?'Gerenciamento de OLTs':page==='onus'?'Status das ONUs':page==='uncfg'?'ONUs Não Provisionadas':page==='search'?'Buscar ONU por Serial':page==='history'?'Históricos de Rede':page==='backups'?'Backups de OLT':page==='users'?'Gerenciamento de Usuários':'Meu Perfil'"></span>
         </div>
-        <div class="topbar-system" x-show="page === 'dashboard'">
+        <div class="topbar-system">
           <span class="system-chip" title="Data e hora do servidor"><i class="fas fa-clock"></i><strong x-text="serverDateTime || '—'"></strong></span>
+          <span class="system-chip" title="Status das OLTs"><i class="fas fa-server"></i>OLTs <strong x-text="`${stats.online_olts || 0}/${stats.total_olts || 0}`"></strong></span>
           <span class="system-chip" title="Uso de CPU"><i class="fas fa-microchip"></i>CPU <strong x-text="stats.system ? stats.system.cpu_percent + '%' : '—'"></strong></span>
           <span class="system-chip" title="Memória em uso e disponível"><i class="fas fa-memory"></i>RAM <strong x-text="stats.system ? formatSystemBytes(stats.system.memory.used) + ' / ' + formatSystemBytes(stats.system.memory.available) + ' disp.' : '—'"></strong></span>
           <span class="system-chip" title="Disco em uso e disponível"><i class="fas fa-hard-drive"></i>Disco <strong x-text="stats.system ? formatSystemBytes(stats.system.disk.used) + ' / ' + formatSystemBytes(stats.system.disk.free) + ' disp.' : '—'"></strong></span>
@@ -1240,6 +1245,153 @@
                         </div>
                       </td>
                     </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══════════════ HISTORY PAGE ══════════════ -->
+        <div x-show="page === 'history'">
+          <div class="page-body">
+            <div class="card mb-4">
+              <div style="display:flex;align-items:end;gap:10px;flex-wrap:wrap">
+                <div style="min-width:180px">
+                  <label class="form-label">Período</label>
+                  <select x-model="historyPeriod" @change="loadHistory()" class="select-field">
+                    <option value="day">Últimas 24 horas</option>
+                    <option value="week">Últimos 7 dias</option>
+                    <option value="month">Últimos 30 dias</option>
+                  </select>
+                </div>
+                <div style="min-width:220px">
+                  <label class="form-label">OLT</label>
+                  <select x-model="historyOltId" @change="loadHistory()" class="select-field">
+                    <option value="">Todas as OLTs</option>
+                    <template x-for="olt in olts" :key="olt.id">
+                      <option :value="olt.id" x-text="olt.name"></option>
+                    </template>
+                  </select>
+                </div>
+                <button @click="loadHistory()" class="btn btn-warning" :disabled="historyLoading" title="Atualizar histórico">
+                  <i class="fas fa-rotate-right"></i>
+                  <span x-text="historyLoading ? 'Carregando' : 'Atualizar'"></span>
+                </button>
+              </div>
+            </div>
+
+            <div x-show="historyError" class="cache-bar mb-4">
+              <i class="fas fa-circle-exclamation"></i><span x-text="historyError"></span>
+            </div>
+
+            <div class="stat-grid" x-show="historyData">
+              <div class="stat-card stat-blue">
+                <div class="stat-icon"><i class="fas fa-network-wired"></i></div>
+                <div class="stat-label">ONUs monitoradas</div>
+                <div class="stat-value" x-text="historyTotals().total"></div>
+              </div>
+              <div class="stat-card stat-green">
+                <div class="stat-icon"><i class="fas fa-circle-check"></i></div>
+                <div class="stat-label">Working</div>
+                <div class="stat-value" x-text="historyTotals().online"></div>
+              </div>
+              <div class="stat-card stat-red">
+                <div class="stat-icon"><i class="fas fa-circle-xmark"></i></div>
+                <div class="stat-label">Fora de working</div>
+                <div class="stat-value" x-text="historyTotals().offline"></div>
+              </div>
+              <div class="stat-card stat-yellow">
+                <div class="stat-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                <div class="stat-label">Eventos no período</div>
+                <div class="stat-value" x-text="historyData?.events?.length || 0"></div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin-bottom:14px" x-show="historyData">
+              <div class="card">
+                <div class="card-header" style="padding:0 0 12px;border:0">
+                  <div class="card-title"><i class="fas fa-chart-column"></i> Mudanças de estado</div>
+                </div>
+                <template x-for="item in (historyData?.event_counts || [])" :key="item.label">
+                  <div style="margin-bottom:10px">
+                    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+                      <span x-text="historyStateLabel(item.label)"></span><strong x-text="item.count"></strong>
+                    </div>
+                    <div class="metric-track"><div :style="{width:chartPercent(item.count,chartMax(historyData?.event_counts))+'%',height:'100%',background:historyStateColor(item.label)}"></div></div>
+                  </div>
+                </template>
+                <div x-show="!historyData?.event_counts?.length" class="empty-state" style="padding:20px">
+                  <p>O histórico começará a aparecer após as próximas atualizações das OLTs.</p>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-header" style="padding:0 0 12px;border:0">
+                  <div class="card-title"><i class="fas fa-diagram-project"></i> Estado atual por PON</div>
+                  <span class="badge badge-blue" x-text="historyData?.pons?.length || 0"></span>
+                </div>
+                <div style="max-height:310px;overflow:auto">
+                  <template x-for="item in (historyData?.pons || [])" :key="`${item.olt_id}-${item.slot}-${item.card}-${item.pon}`">
+                    <div style="padding:8px 0;border-bottom:1px solid var(--border-dim)">
+                      <div style="display:flex;justify-content:space-between;font-size:12px">
+                        <strong x-text="`${item.olt} ${item.slot}/${item.card}/${item.pon}`"></strong>
+                        <span><b style="color:var(--green)" x-text="item.online"></b> online / <b style="color:var(--red)" x-text="item.offline"></b> offline</span>
+                      </div>
+                      <div class="metric-track" style="margin-top:6px"><div :style="{width:Math.round((item.online || 0)/Math.max(item.total || 1,1)*100)+'%',height:'100%',background:'#3fb950'}"></div></div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4" x-show="historyData">
+              <div class="card-header">
+                <div class="card-title"><i class="fas fa-wave-square"></i> Histórico das PONs</div>
+                <span style="font-size:11px;color:var(--text-muted)">Amostras das atualizações automáticas e manuais</span>
+              </div>
+              <div class="table-wrap" style="max-height:320px;overflow:auto">
+                <table>
+                  <thead><tr><th>Data/Hora</th><th>OLT</th><th>PON</th><th>Total</th><th>Working</th><th>Outros estados</th></tr></thead>
+                  <tbody>
+                    <template x-for="(item, index) in (historyData?.pon_snapshots || [])" :key="`${item.olt_id}-${item.pon}-${item.captured_at}-${index}`">
+                      <tr>
+                        <td x-text="formatHistoryDate(item.captured_at)"></td>
+                        <td x-text="item.olt"></td>
+                        <td class="mono" x-text="item.pon"></td>
+                        <td x-text="item.total"></td>
+                        <td style="color:var(--green)" x-text="item.online"></td>
+                        <td style="color:var(--red)" x-text="item.offline"></td>
+                      </tr>
+                    </template>
+                    <tr x-show="!historyData?.pon_snapshots?.length"><td colspan="6"><div class="empty-state"><p>Sem amostras de PON no período.</p></div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card" x-show="historyData">
+              <div class="card-header">
+                <div class="card-title"><i class="fas fa-list"></i> Eventos de ONU</div>
+                <span class="badge badge-yellow" x-text="historyData?.events?.length || 0"></span>
+              </div>
+              <div class="table-wrap" style="max-height:520px;overflow:auto">
+                <table>
+                  <thead><tr><th>Data/Hora</th><th>OLT</th><th>PON</th><th>ONU</th><th>Serial</th><th>Estado anterior</th><th>Novo estado</th><th>Motivo</th></tr></thead>
+                  <tbody>
+                    <template x-for="event in (historyData?.events || [])" :key="event.id">
+                      <tr>
+                        <td x-text="formatHistoryDate(event.observed_at)"></td>
+                        <td x-text="event.olt"></td>
+                        <td x-text="event.pon"></td>
+                        <td x-text="event.onu_id"></td>
+                        <td class="mono" x-text="event.serial || '—'"></td>
+                        <td x-text="historyStateLabel(event.previous_state)"></td>
+                        <td><span class="badge" :style="`color:${historyStateColor(event.current_state)};border-color:${historyStateColor(event.current_state)}`" x-text="historyStateLabel(event.current_state)"></span></td>
+                        <td x-text="event.reason || (event.current_signal === 'rx_critical' ? 'RX <= -28 dBm' : '—')"></td>
+                      </tr>
+                    </template>
+                    <tr x-show="!historyData?.events?.length"><td colspan="8"><div class="empty-state"><p>Nenhuma mudança registrada no período.</p></div></td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1781,7 +1933,7 @@
               <div style="margin-top:12px" x-show="backupFtpStatus && backupFtpStatus.files && backupFtpStatus.files.length">
                 <div class="form-label">Ultimos arquivos recebidos</div>
                 <div style="display:grid;gap:6px">
-                  <template x-for="file in backupFtpStatus.files" :key="file.name">
+                  <template x-for="file in ((backupFtpStatus && backupFtpStatus.files) || [])" :key="file.name">
                     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px">
                       <span class="td-mono" x-text="file.name"></span>
                       <span x-text="formatBytes(file.size)"></span>
@@ -2410,7 +2562,7 @@
                     <span x-text="onuTrafficData && onuTrafficData.traffic ? (onuTrafficData.traffic.rx_bw_util || 0) + '%' : ''"></span>
                   </div>
                   <div style="background:var(--border);border-radius:3px;height:5px">
-                    <div :style="{width: Math.min(onuTrafficData.traffic.rx_bw_util||0,100)+'%',height:'100%',borderRadius:'3px',background:'#3fb950'}"></div>
+                    <div :style="{width: Math.min(onuTrafficData?.traffic?.rx_bw_util||0,100)+'%',height:'100%',borderRadius:'3px',background:'#3fb950'}"></div>
                   </div>
                 </div>
               </div>
@@ -2427,7 +2579,7 @@
                     <span x-text="onuTrafficData && onuTrafficData.traffic ? (onuTrafficData.traffic.tx_bw_util || 0) + '%' : ''"></span>
                   </div>
                   <div style="background:var(--border);border-radius:3px;height:5px">
-                    <div :style="{width: Math.min(onuTrafficData.traffic.tx_bw_util||0,100)+'%',height:'100%',borderRadius:'3px',background:'#58a6ff'}"></div>
+                    <div :style="{width: Math.min(onuTrafficData?.traffic?.tx_bw_util||0,100)+'%',height:'100%',borderRadius:'3px',background:'#58a6ff'}"></div>
                   </div>
                 </div>
               </div>

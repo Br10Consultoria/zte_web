@@ -133,7 +133,15 @@ class Parks30004000Driver(OLTDriver):
             status = (status_m.group(1).strip() if status_m else "UNKNOWN")
             power = self._power_value(power_m.group(1).strip() if power_m else "")
             rssi = self._power_value(rssi_m.group(1).strip() if rssi_m else "")
-            oper = "working" if "active" in status.lower() else "offline"
+            status_lower = status.lower()
+            if "invalid" in status_lower:
+                oper = "invalid"
+            elif "inactive" in status_lower:
+                oper = "inactive"
+            elif "active" in status_lower:
+                oper = "working"
+            else:
+                oper = "offline"
             no_signal = (
                 (power_m and "no signal" in power_m.group(1).lower()) or
                 (rssi_m and "no signal" in rssi_m.group(1).lower())

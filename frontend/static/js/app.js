@@ -132,6 +132,11 @@ function app() {
     dashboardAnalytics: null,
     dashboardAnalyticsError: '',
     dashboardDrilldown: { show: false, type: '', label: '', value: '', rows: [] },
+    historyPeriod: 'day',
+    historyOltId: '',
+    historyData: null,
+    historyLoading: false,
+    historyError: '',
 
     // ============================================================
     // INIT
@@ -139,6 +144,9 @@ function app() {
     async init() {
       this.updateServerClock();
       setInterval(() => this.updateServerClock(), 1000);
+      setInterval(() => {
+        if (this.isLoggedIn) this.refreshSystemMetrics();
+      }, 30000);
       // Verifica se logo existe
       try {
         const logoRes = await fetch(this.logoSrc, { method: 'HEAD', cache: 'no-store' });
@@ -309,14 +317,7 @@ function app() {
       } catch (e) {}
       this.stats.total_olts = this.olts.length;
       this.stats.online_olts = this.olts.filter(o => o.status === 'online').length;
-      try {
-        const res = await this.apiGet('/dashboard/system');
-        if (res.ok) {
-          this.stats.system = await this.safeJson(res);
-          this.serverTimeOffset = new Date(this.stats.system.server_time).getTime() - Date.now();
-          this.updateServerClock();
-        }
-      } catch (e) {}
+      await this.refreshSystemMetrics();
       try {
         const res = await this.apiGet('/dashboard/analytics');
         if (res.ok) {
@@ -345,6 +346,16 @@ function app() {
       });
     },
 
+    async refreshSystemMetrics() {
+      try {
+        const res = await this.apiGet('/dashboard/system');
+        if (!res.ok) return;
+        this.stats.system = await this.safeJson(res);
+        this.serverTimeOffset = new Date(this.stats.system.server_time).getTime() - Date.now();
+        this.updateServerClock();
+      } catch (e) {}
+    },
+
     formatSystemBytes(bytes) {
       const value = Number(bytes || 0);
       if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
@@ -358,6 +369,64 @@ function app() {
       const hours = Math.floor((total % 86400) / 3600);
       const minutes = Math.floor((total % 3600) / 60);
       return days ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+    },
+
+    async loadHistory() {
+      this.historyLoading = true;
+      this.historyError = '';
+      try {
+        const params = new URLSearchParams({ period: this.historyPeriod });
+        if (this.historyOltId) params.set('olt_id', this.historyOltId);
+        const res = await this.apiGet(`/dashboard/history?${params.toString()}`);
+        const data = await this.safeJson(res);
+        if (!res.ok) throw new Error(data.detail || 'Nao foi possivel carregar o historico.');
+        this.historyData = data;
+      } catch (e) {
+        this.historyError = e.message;
+        this.historyData = null;
+      } finally {
+        this.historyLoading = false;
+      }
+    },
+
+    historyLatestSnapshots() {
+      const latest = new Map();
+      for (const item of (this.historyData?.snapshots || [])) latest.set(item.olt_id, item);
+      return [...latest.values()];
+    },
+
+    historyTotals() {
+      return this.historyLatestSnapshots().reduce((total, item) => {
+        total.total += Number(item.total || 0);
+        total.online += Number(item.online || 0);
+        total.offline += Number(item.offline || 0);
+        return total;
+      }, { total: 0, online: 0, offline: 0 });
+    },
+
+    historyStateLabel(value) {
+      const labels = {
+        working: 'Working', dyinggasp: 'DyingGasp', los: 'LOS',
+        losi: 'LOSi', lof: 'LOF', reboot: 'Reboot',
+        'omci-down': 'OMCI Down', poweroff: 'PowerOff',
+        offline: 'Offline', inactive: 'Inativa', invalid: 'Inválida',
+        rx_critical: 'RX <= -28 dBm',
+        unknown: 'Desconhecido',
+      };
+      return labels[String(value || '').toLowerCase()] || value || '—';
+    },
+
+    historyStateColor(value) {
+      const state = String(value || '').toLowerCase();
+      if (state === 'working') return '#3fb950';
+      if (['los', 'losi', 'lof', 'rx_critical'].includes(state)) return '#f85149';
+      if (['dyinggasp', 'omci-down', 'reboot'].includes(state)) return '#e3b341';
+      return '#8b949e';
+    },
+
+    formatHistoryDate(value) {
+      if (!value) return '—';
+      return new Date(value).toLocaleString('pt-BR');
     },
 
     chartPercent(value, max) {
@@ -546,6 +615,7 @@ function app() {
 
     setPage(p) {
       this.page = p;
+      if (p === 'history') this.loadHistory();
       if (p === 'users') this.loadUsers();
       if (p === 'backups') this.loadBackupPage();
       if (p === 'search') this.loadSearchPage();

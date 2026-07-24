@@ -144,3 +144,49 @@ class ONUAnnotation(Base):
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OLTStatusSnapshot(Base):
+    __tablename__ = "olt_status_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    olt_id = Column(Integer, ForeignKey("olts.id"), nullable=False, index=True)
+    olt_status = Column(String(20), default="online")
+    total_onus = Column(Integer, default=0)
+    online_onus = Column(Integer, default=0)
+    offline_onus = Column(Integer, default=0)
+    status_counts = Column(Text, nullable=True)
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class PONStatusSnapshot(Base):
+    __tablename__ = "pon_status_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    olt_id = Column(Integer, ForeignKey("olts.id"), nullable=False, index=True)
+    slot = Column(Integer, nullable=False)
+    card = Column(Integer, nullable=False, default=1)
+    pon = Column(Integer, nullable=False)
+    total_onus = Column(Integer, default=0)
+    online_onus = Column(Integer, default=0)
+    offline_onus = Column(Integer, default=0)
+    status_counts = Column(Text, nullable=True)
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class ONUStateEvent(Base):
+    __tablename__ = "onu_state_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    olt_id = Column(Integer, ForeignKey("olts.id"), nullable=False, index=True)
+    slot = Column(Integer, nullable=False)
+    card = Column(Integer, nullable=False, default=1)
+    pon = Column(Integer, nullable=False)
+    onu_id = Column(Integer, nullable=False)
+    serial = Column(String(80), nullable=True)
+    previous_state = Column(String(40), nullable=True)
+    current_state = Column(String(40), nullable=False)
+    previous_signal = Column(String(30), nullable=True)
+    current_signal = Column(String(30), nullable=True)
+    reason = Column(String(120), nullable=True)
+    observed_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

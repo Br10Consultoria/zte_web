@@ -1,14 +1,16 @@
 import logging
+import json
 import threading
 import time
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import SessionLocal
-from .models import OLT, OLTPort
+from .models import OLT, OLTPort, OLTStatusSnapshot, PONStatusSnapshot, ONUStateEvent
 from .olt_client import OLTConnectionError, get_olt_client
 from .olt_driver import get_driver
 from .redis_client import cache
@@ -30,6 +32,113 @@ def _now_iso() -> str:
 
 def pon_status_cache_key(olt_id: int, slot: int, card: int, pon: int) -> str:
     return f"olt:{olt_id}:pon:{slot}:{card}:{pon}:status"
+
+
+def _onu_id(onu: dict) -> int:
+    try:
+        return int(str(onu.get("onu_index") or "").split(":")[-1])
+    except (TypeError, ValueError):
+        return 0
+
+
+def _signal_state(onu: dict) -> str:
+    value = onu.get("olt_rx_power")
+    try:
+        if value is not None and float(value) <= -28:
+            return "rx_critical"
+    except (TypeError, ValueError):
+        pass
+    return (onu.get("olt_rx_status") or "unknown").lower()
+
+
+def _record_port_history(db: Session, olt: OLT, port: OLTPort, result: Dict, previous: Optional[Dict]) -> None:
+    now = datetime.utcnow()
+    counts = Counter((onu.get("oper_state") or "unknown").lower() for onu in result.get("onus", []))
+    db.add(PONStatusSnapshot(
+        olt_id=olt.id,
+        slot=port.slot,
+        card=port.card or 1,
+        pon=port.pon,
+        total_onus=result.get("total", 0),
+        online_onus=result.get("online", 0),
+        offline_onus=result.get("offline", 0),
+        status_counts=json.dumps(dict(counts)),
+        captured_at=now,
+    ))
+
+    previous_map = {
+        str(item.get("onu_index") or ""): item
+        for item in (previous or {}).get("onus", [])
+    }
+    if not previous_map:
+        latest_events = db.query(ONUStateEvent).filter(
+            ONUStateEvent.olt_id == olt.id,
+            ONUStateEvent.slot == port.slot,
+            ONUStateEvent.card == (port.card or 1),
+            ONUStateEvent.pon == port.pon,
+        ).order_by(ONUStateEvent.observed_at.desc()).all()
+        for event in latest_events:
+            idx = f"{port.slot}/{port.card or 1}/{port.pon}:{event.onu_id}"
+            if idx in previous_map:
+                continue
+            previous_map[idx] = {
+                "onu_index": idx,
+                "serial": event.serial,
+                "oper_state": event.current_state,
+                "olt_rx_status": event.current_signal,
+            }
+    for onu in result.get("onus", []):
+        idx = str(onu.get("onu_index") or "")
+        old = previous_map.get(idx)
+        current_state = (onu.get("oper_state") or "unknown").lower()
+        current_signal = _signal_state(onu)
+        previous_state = (old.get("oper_state") or "unknown").lower() if old else None
+        previous_signal = _signal_state(old) if old else None
+        if old and previous_state == current_state and previous_signal == current_signal:
+            continue
+        db.add(ONUStateEvent(
+            olt_id=olt.id,
+            slot=port.slot,
+            card=port.card or 1,
+            pon=port.pon,
+            onu_id=_onu_id(onu),
+            serial=onu.get("serial") or None,
+            previous_state=previous_state,
+            current_state=current_state,
+            previous_signal=previous_signal,
+            current_signal=current_signal,
+            reason=onu.get("last_down_cause") or None,
+            observed_at=now,
+        ))
+
+
+def _record_olt_snapshot(
+    db: Session,
+    olt_id: int,
+    port_results: List[Dict],
+    olt_status: str = "online",
+) -> None:
+    counts = Counter()
+    for result in port_results:
+        counts.update((onu.get("oper_state") or "unknown").lower() for onu in result.get("onus", []))
+    online = counts.get("working", 0)
+    total = sum(counts.values())
+    db.add(OLTStatusSnapshot(
+        olt_id=olt_id,
+        olt_status=olt_status,
+        total_onus=total,
+        online_onus=online,
+        offline_onus=max(total - online, 0),
+        status_counts=json.dumps(dict(counts)),
+        captured_at=datetime.utcnow(),
+    ))
+
+
+def _prune_history(db: Session) -> None:
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    db.query(OLTStatusSnapshot).filter(OLTStatusSnapshot.captured_at < cutoff).delete(synchronize_session=False)
+    db.query(PONStatusSnapshot).filter(PONStatusSnapshot.captured_at < cutoff).delete(synchronize_session=False)
+    db.query(ONUStateEvent).filter(ONUStateEvent.observed_at < cutoff).delete(synchronize_session=False)
 
 
 def collect_pon_status(client, driver, olt: OLT, port: OLTPort, include_details: bool = True) -> Dict:
@@ -142,6 +251,7 @@ def refresh_olt_ports_status(
 
     client = None
     summary = {"olt_id": olt_id, "updated": 0, "failed": 0, "errors": []}
+    port_results = []
 
     try:
         olt = db.query(OLT).filter(OLT.id == olt_id).first()
@@ -165,8 +275,12 @@ def refresh_olt_ports_status(
         for port in ports:
             iface = driver.olt_iface(port.slot, port.card, port.pon)
             try:
+                cache_key = pon_status_cache_key(olt_id, port.slot, port.card, port.pon)
+                previous = cache.get(cache_key)
                 result = collect_pon_status(client, driver, olt, port, include_details=include_details)
-                cache.set(pon_status_cache_key(olt_id, port.slot, port.card, port.pon), result)
+                _record_port_history(db, olt, port, result, previous)
+                cache.set(cache_key, result)
+                port_results.append(result)
                 port.onu_count = result["total"]
                 port.status = "online" if result["online"] > 0 else "active"
                 summary["updated"] += 1
@@ -177,6 +291,9 @@ def refresh_olt_ports_status(
                 summary["errors"].append(f"{iface}: {exc}")
                 logger.error(f"[CACHE] Erro ao atualizar {iface}: {exc}", exc_info=True)
 
+        if port_results:
+            _record_olt_snapshot(db, olt_id, port_results)
+        _prune_history(db)
         olt.status = "online" if summary["updated"] else "offline"
         olt.last_check = datetime.now()
         db.commit()
@@ -192,6 +309,8 @@ def refresh_olt_ports_status(
             if olt:
                 olt.status = "offline"
                 olt.last_check = datetime.now()
+                _record_olt_snapshot(db, olt_id, [], olt_status="offline")
+                _prune_history(db)
                 db.commit()
         except Exception:
             db.rollback()
@@ -243,9 +362,10 @@ def start_hourly_status_refresh() -> None:
 
     def _runner():
         logger.info(f"[SCHED] Atualizacao automatica iniciada a cada {interval}s")
+        time.sleep(10)
         while True:
-            time.sleep(interval)
             refresh_all_olts_once()
+            time.sleep(interval)
 
     thread = threading.Thread(target=_runner, name="olt-hourly-status-refresh", daemon=True)
     thread.start()
