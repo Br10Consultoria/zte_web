@@ -202,6 +202,7 @@ class OLTSSHClient:
         self.password = password
         self.client = None
         self.shell = None
+        self._exec_mode = False
 
     def connect(self):
         _log("info", f"[SSH] Conectando a {self.ip}:{self.port} como '{self.username}'")
@@ -219,6 +220,10 @@ class OLTSSHClient:
             if self.shell.recv_ready():
                 banner = self.shell.recv(8192).decode("utf-8", errors="replace")
                 _log("debug", f"[SSH] Banner: {banner[:200]}")
+            if getattr(self.shell, "closed", False):
+                self._exec_mode = True
+                self.shell = None
+                _log("warning", f"[SSH] Shell interativo indisponivel em {self.ip}; usando exec_command")
             # Nao envia terminal length automaticamente no SSH.
             # Alguns vendors (Parks 3000/4000) fecham o canal ao receber esse
             # comando logo apos o login. Os comandos usados aqui sao curtos e
@@ -230,10 +235,17 @@ class OLTSSHClient:
             raise OLTConnectionError(f"Falha SSH em {self.ip}:{self.port} — {e}")
 
     def execute_command(self, command: str, timeout: int = None) -> str:
-        if not self.shell or getattr(self.shell, "closed", False):
-            raise OLTConnectionError("Shell SSH não disponível")
-
         timeout = timeout or settings.SSH_COMMAND_TIMEOUT
+        if self._exec_mode:
+            return self._execute_command_exec(command, timeout=timeout)
+
+        if not self.shell or getattr(self.shell, "closed", False):
+            if self.client:
+                _log("warning", f"[SSH] Shell fechado em {self.ip}; tentando exec_command")
+                self._exec_mode = True
+                return self._execute_command_exec(command, timeout=timeout)
+            raise OLTConnectionError("Shell SSH nao disponivel")
+
         _log("info", f"[SSH] Executando: {_redact_command(command)}")
         try:
             self.shell.send(command + "\n")
@@ -250,7 +262,7 @@ class OLTSSHClient:
                 if self.shell.recv_ready():
                     chunk = self.shell.recv(8192).decode("utf-8", errors="replace")
                     output += chunk
-                    # Trata paginação --More--
+                    # Trata paginacao --More--
                     if re.search(r'--\s*[Mm]ore\s*--', chunk):
                         self.shell.send(" ")
                         time.sleep(0.3)
@@ -270,6 +282,47 @@ class OLTSSHClient:
         clean = _clean_output(output, command)
         _log("debug", f"[SSH] Resposta ({len(clean)} chars): {clean[:300]}")
         return clean
+
+    def _execute_command_exec(self, command: str, timeout: int = None) -> str:
+        if not self.client:
+            raise OLTConnectionError("Cliente SSH nao disponivel")
+
+        timeout = timeout or settings.SSH_COMMAND_TIMEOUT
+        _log("info", f"[SSH/EXEC] Executando: {_redact_command(command)}")
+        try:
+            stdin, stdout, stderr = self.client.exec_command(
+                command,
+                timeout=timeout,
+                get_pty=True,
+            )
+            output = ""
+            err_output = ""
+            start_time = time.time()
+            channel = stdout.channel
+            channel.settimeout(0.5)
+
+            while time.time() - start_time < timeout:
+                read_any = False
+                if channel.recv_ready():
+                    output += channel.recv(8192).decode("utf-8", errors="replace")
+                    read_any = True
+                if channel.recv_stderr_ready():
+                    err_output += channel.recv_stderr(8192).decode("utf-8", errors="replace")
+                    read_any = True
+                if channel.exit_status_ready():
+                    while channel.recv_ready():
+                        output += channel.recv(8192).decode("utf-8", errors="replace")
+                    while channel.recv_stderr_ready():
+                        err_output += channel.recv_stderr(8192).decode("utf-8", errors="replace")
+                    break
+                if not read_any:
+                    time.sleep(0.1)
+
+            clean = _clean_output(output + ("\n" + err_output if err_output else ""), command)
+            _log("debug", f"[SSH/EXEC] Resposta ({len(clean)} chars): {clean[:300]}")
+            return clean
+        except Exception as e:
+            raise OLTConnectionError(f"Falha SSH exec em {self.ip}:{self.port} - {e}")
 
     def disconnect(self):
         try:
