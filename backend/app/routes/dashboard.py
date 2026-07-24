@@ -201,10 +201,6 @@ def dashboard_analytics(
     raw_cached_onus = 0
     redis_available = cache.is_available()
 
-    for olt in olts:
-        if olt.firmware:
-            firmware_counts[olt.firmware] += 1
-
     for port in ports:
         olt = olt_by_id.get(port.olt_id)
         if not olt:

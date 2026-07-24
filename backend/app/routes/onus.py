@@ -127,6 +127,47 @@ def _apply_last_down_from_history(result: dict) -> dict:
     return result
 
 
+def _sync_full_details_to_pon_cache(
+    olt_id: int,
+    slot: int,
+    card: int,
+    pon: int,
+    onu_id: int,
+    full: dict,
+) -> None:
+    """Copia campos coletados no detalhe para a listagem usada pela dashboard."""
+    pon_key = pon_status_cache_key(olt_id, slot, card, pon)
+    status = cache.get(pon_key)
+    if not status:
+        return
+
+    expected_index = f"{slot}/{card}/{pon}:{onu_id}"
+    detail = full.get("detail") or {}
+    equipment = full.get("equipment") or {}
+    firmware_data = full.get("firmware") or {}
+    firmware = (
+        equipment.get("firmware")
+        or equipment.get("version")
+        or firmware_data.get("current_version")
+        or firmware_data.get("active_version")
+        or detail.get("firmware_version")
+    )
+    changed = False
+    for onu in status.get("onus") or []:
+        if str(onu.get("onu_index") or "") != expected_index:
+            continue
+        if firmware:
+            onu["firmware"] = firmware
+        if detail.get("description"):
+            onu["description"] = detail["description"]
+        if detail.get("online_duration"):
+            onu["online_duration"] = detail["online_duration"]
+        changed = True
+        break
+    if changed:
+        cache.set(pon_key, status)
+
+
 def _signal_status(value):
     if value is None:
         return None
@@ -430,6 +471,7 @@ def get_onu_full_info(
             cached_data["annotation"] = _annotation_dict(_get_annotation(db, olt_id, slot, card, pon, onu_id))
             cached_data["signal_history"] = cache.get(_signal_history_key(olt_id, slot, card, pon, onu_id)) or []
             cached_data = _apply_last_down_from_history(cached_data)
+            _sync_full_details_to_pon_cache(olt_id, slot, card, pon, onu_id, cached_data)
             return cached_data
 
     try:
@@ -447,6 +489,7 @@ def get_onu_full_info(
         result = _apply_last_down_from_history(result)
 
         cache.set(cache_key, result)
+        _sync_full_details_to_pon_cache(olt_id, slot, card, pon, onu_id, result)
         return result
 
     except OLTConnectionError as e:

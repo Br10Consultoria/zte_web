@@ -104,6 +104,7 @@ function app() {
     backupJobs: [],
     backupFtpStatus: null,
     backupLoading: false,
+    backupRunningOltId: null,
 
     // Users
     users: [],
@@ -1453,9 +1454,15 @@ write`;
 
     async runBackup() {
       if (!this.backupOltId) return;
+      return this.runBackupFor(Number(this.backupOltId));
+    },
+
+    async runBackupFor(oltId) {
+      if (!oltId || this.backupRunningOltId) return;
       this.backupLoading = true;
+      this.backupRunningOltId = Number(oltId);
       try {
-        const res = await this.apiPost('/backups/run', { olt_id: Number(this.backupOltId), send_telegram: true });
+        const res = await this.apiPost('/backups/run', { olt_id: Number(oltId), send_telegram: true });
         const data = await this.safeJson(res);
         if (!res.ok) throw new Error(data.detail || 'Erro ao iniciar backup');
         this.showToast(`Backup iniciado (job #${data.id})`, 'success');
@@ -1469,7 +1476,12 @@ write`;
         this.showToast(e.message, 'error');
       } finally {
         this.backupLoading = false;
+        this.backupRunningOltId = null;
       }
+    },
+
+    lastBackupFor(oltId) {
+      return (this.backupJobs || []).find(job => Number(job.olt_id) === Number(oltId)) || null;
     },
 
     async loadBackupJobs() {
