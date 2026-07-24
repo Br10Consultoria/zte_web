@@ -236,6 +236,10 @@ def _parse_gpon_ifname(if_name: str) -> Optional[Tuple[int, int, int]]:
     if m:
         return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
+    m = re.match(r'^gpon(\d+)/(\d+)$', s, re.IGNORECASE)
+    if m:
+        return int(m.group(1)), 1, int(m.group(2))
+
     return None
 
 
@@ -260,6 +264,8 @@ def snmp_discover_pon_ports(host: str, community: str, port: int = 161,
         raise SNMPError(
             "snmpwalk não encontrado. Instale com: apt-get install -y snmp"
         )
+
+    is_parks = (olt_model or "").lower() == "parks_3000_4000"
 
     # -------------------------------------------------------
     # Passo 1: Descoberta via ifName (OID padrão IF-MIB)
@@ -300,7 +306,7 @@ def snmp_discover_pon_ports(host: str, community: str, port: int = 161,
     # -------------------------------------------------------
     # Fallback: OID proprietária ZTE (para C320 legado)
     # -------------------------------------------------------
-    if not pon_ports:
+    if not pon_ports and not is_parks:
         logger.info("[SNMP] Tentando OID proprietária ZTE (fallback para C320 legado)")
         try:
             pon_rows = _snmp_walk(host, community, OID_ZTE_PON_NAME, port, version)
@@ -349,30 +355,33 @@ def snmp_discover_pon_ports(host: str, community: str, port: int = 161,
     # -------------------------------------------------------
     # Passo 2: Contagem de ONUs online (OID 3902.1082)
     # -------------------------------------------------------
-    try:
-        onu_online_rows = _snmp_walk(host, community, OID_ZTE_ONU_ONLINE, port, version)
-        onu_online_map = {idx: val for idx, val in onu_online_rows}
-        for p in pon_ports:
-            val = onu_online_map.get(p["if_index"], "0")
-            try:
-                p["onu_count"] = int(val)
-            except (ValueError, TypeError):
-                p["onu_count"] = 0
-        logger.info(f"[SNMP] Contagem de ONUs online obtida via OID 3902.1082")
-    except Exception as e:
-        logger.warning(f"[SNMP] Falha ao obter ONUs online (3902.1082): {e}")
-        # Fallback: OID 3902.1012
+    if is_parks:
+        logger.info("[SNMP] Parks: pulando OIDs proprietarias ZTE de contagem de ONUs")
+    else:
         try:
-            onu_rows = _snmp_walk(host, community, OID_ZTE_PON_ONU_COUNT, port, version)
-            onu_map = {idx: val for idx, val in onu_rows if idx > 1000}
+            onu_online_rows = _snmp_walk(host, community, OID_ZTE_ONU_ONLINE, port, version)
+            onu_online_map = {idx: val for idx, val in onu_online_rows}
             for p in pon_ports:
-                val = onu_map.get(p["if_index"], "0")
+                val = onu_online_map.get(p["if_index"], "0")
                 try:
-                    p["onu_count"] = int(val) if str(val).isdigit() else 0
+                    p["onu_count"] = int(val)
                 except (ValueError, TypeError):
                     p["onu_count"] = 0
-        except Exception:
-            pass
+            logger.info(f"[SNMP] Contagem de ONUs online obtida via OID 3902.1082")
+        except Exception as e:
+            logger.warning(f"[SNMP] Falha ao obter ONUs online (3902.1082): {e}")
+            # Fallback: OID 3902.1012
+            try:
+                onu_rows = _snmp_walk(host, community, OID_ZTE_PON_ONU_COUNT, port, version)
+                onu_map = {idx: val for idx, val in onu_rows if idx > 1000}
+                for p in pon_ports:
+                    val = onu_map.get(p["if_index"], "0")
+                    try:
+                        p["onu_count"] = int(val) if str(val).isdigit() else 0
+                    except (ValueError, TypeError):
+                        p["onu_count"] = 0
+            except Exception:
+                pass
 
     # -------------------------------------------------------
     # Passo 3: Status operacional via ifOperStatus
