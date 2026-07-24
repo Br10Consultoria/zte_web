@@ -304,7 +304,9 @@ def provision_onu(
     commands = _render_template(tpl.commands, values)
     client = None
     try:
-        client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+        client = get_olt_client(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+        )
         client.connect()
         outputs = []
         for cmd in commands:
@@ -365,7 +367,9 @@ def get_pon_status(
 
     client = None
     try:
-        client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+        client = get_olt_client(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+        )
         client.connect()
 
         if not port_obj:
@@ -511,7 +515,9 @@ def get_unconfigured_onus(
             return cached_data
 
     try:
-        client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+        client = get_olt_client(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+        )
         client.connect()
         if getattr(driver, "model_key", "") == "parks_3000_4000":
             out = client.execute_command(driver.cmd_uncfg_onus(), timeout=30)
@@ -577,7 +583,9 @@ def search_onu(
     results = []
     client = None
     try:
-        client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+        client = get_olt_client(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+        )
         client.connect()
 
         for p in ports:
@@ -675,7 +683,9 @@ def onu_remove(
 
     client = None
     try:
-        client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+        client = get_olt_client(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+        )
         client.connect()
         commands = [
             "configure terminal",

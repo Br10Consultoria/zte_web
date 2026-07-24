@@ -295,7 +295,9 @@ def run_backup_job(job_id: int, send_telegram_flag: bool = True):
 
         logger.info(f"[BACKUP] Executando backup da OLT {olt.id} {olt.ip}")
         logger.info(f"[BACKUP] Aguardando arquivo FTP em {ftp_path}")
-        client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+        client = get_olt_client(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+        )
         client.connect()
         output = client.execute_command(command, timeout=180)
         safe_output = output or ""

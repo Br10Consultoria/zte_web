@@ -18,6 +18,15 @@ class Parks30004000Driver(OLTDriver):
     """
     model_key = "parks_3000_4000"
 
+    def login_pre_prompt_markers(self) -> List[str]:
+        return ["press <return>", "press return"]
+
+    def auth_failure_markers(self) -> List[str]:
+        return super().auth_failure_markers() + ["%auth-4-login"]
+
+    def pagination_disable_commands(self) -> List[str]:
+        return ["screen-length 0 temporary"]
+
     def olt_iface(self, slot: int, card: int, pon: int) -> str:
         return f"gpon{slot}/{pon}"
 
@@ -210,6 +219,34 @@ class Parks30004000Driver(OLTDriver):
                 "olt_rx_status": onu.get("olt_rx_status"),
             }
         return {}
+
+    def parse_optical_module_info(self, output: str) -> Dict:
+        result = {}
+        patterns = {
+            "vendor": r"Name\s*:\s*(\S+)",
+            "product": r"PN\s*:\s*(\S+)",
+            "sequence_number": r"SN\s*:\s*(\S+)",
+            "version_level": r"Rev\s*:\s*(\S+)",
+            "connector": r"Connector\s*:\s*(\S+)",
+            "wavelength": r"Laser Wavelength\s*:\s*(\d+)\s*nm",
+            "temperature": r"Temperature\s*:\s*([-\d.]+)\s*C",
+            "supply_voltage": r"Supply Voltage\s*:\s*([-\d.]+)\s*V",
+            "tx_power": r"TX Output Power\s*:\s*([-\d.]+)\s*dBm",
+            "rx_power": r"RX Input Power\s*:\s*([-\d.]+)\s*dBm",
+        }
+        numeric_fields = {"temperature", "supply_voltage", "tx_power", "rx_power"}
+        for key, pattern in patterns.items():
+            match = re.search(pattern, output, re.IGNORECASE)
+            if not match:
+                continue
+            value = match.group(1).strip()
+            if key in numeric_fields:
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+            result[key] = value
+        return result
 
     def parse_onu_traffic(self, output: str) -> dict:
         return {}

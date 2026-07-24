@@ -7,10 +7,18 @@ from .base import OLTDriver, _parse_onu_traffic_common
 
 logger = logging.getLogger("olt_driver")
 
+
+class ZTESessionProfile:
+    """Peculiaridades da sessao CLI das OLTs ZTE."""
+
+    def pagination_disable_commands(self) -> List[str]:
+        return ["terminal length 0"]
+
+
 # DRIVER ZTE C600
 # ============================================================
 
-class ZTEC600Driver(OLTDriver):
+class ZTEC600Driver(ZTESessionProfile, OLTDriver):
     """
     Driver para ZTE C600.
     Formato de interface: gpon_olt-SLOT/CARD/PON  |  gpon_onu-SLOT/CARD/PON:ID
@@ -273,7 +281,7 @@ class ZTEC600Driver(OLTDriver):
 # DRIVER ZTE C300 / C300M / C300T (Titan)
 # ============================================================
 
-class ZTEC300Driver(OLTDriver):
+class ZTEC300Driver(ZTESessionProfile, OLTDriver):
     """
     Driver para ZTE C300/C300M/C300T.
     Formato de interface: gpon-olt_SLOT/CARD/PON  |  gpon-onu_SLOT/CARD/PON:ID

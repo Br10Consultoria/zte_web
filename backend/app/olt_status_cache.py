@@ -157,7 +157,9 @@ def refresh_olt_ports_status(
             return summary
 
         driver = get_driver(olt.olt_model)
-        client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+        client = get_olt_client(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+        )
         client.connect()
 
         for port in ports:

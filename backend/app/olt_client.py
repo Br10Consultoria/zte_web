@@ -193,15 +193,16 @@ class SimpleTelnet:
 # CLIENTE SSH
 # ============================================================
 class OLTSSHClient:
-    """Cliente SSH para comunicação com OLTs ZTE Titan."""
+    """Transporte SSH compartilhado entre drivers de OLT."""
 
-    def __init__(self, ip: str, port: int, username: str, password: str):
+    def __init__(self, ip: str, port: int, username: str, password: str, driver):
         self.ip = ip
         self.port = port
         self.username = username
         self.password = password
         self.client = None
         self.shell = None
+        self.driver = driver
         self._exec_mode = False
 
     def connect(self):
@@ -224,10 +225,18 @@ class OLTSSHClient:
                 self._exec_mode = True
                 self.shell = None
                 _log("warning", f"[SSH] Shell interativo indisponivel em {self.ip}; usando exec_command")
-            # Nao envia terminal length automaticamente no SSH.
-            # Alguns vendors (Parks 3000/4000) fecham o canal ao receber esse
-            # comando logo apos o login. Os comandos usados aqui sao curtos e
-            # o Telnet ja mantem a logica propria de paginacao para ZTE.
+                _log("info", f"[SSH] Conectado com sucesso a {self.ip}:{self.port}")
+                return
+            for command in self.driver.pagination_disable_commands():
+                self.shell.send(command + "\n")
+                time.sleep(0.8)
+                if self.shell.recv_ready():
+                    self.shell.recv(8192)
+                if getattr(self.shell, "closed", False):
+                    self._exec_mode = True
+                    self.shell = None
+                    _log("warning", f"[SSH] Shell fechou durante configuracao; usando exec_command")
+                    break
             _log("info", f"[SSH] Conectado com sucesso a {self.ip}:{self.port}")
         except OLTConnectionError:
             raise
@@ -241,7 +250,6 @@ class OLTSSHClient:
 
         if not self.shell or getattr(self.shell, "closed", False):
             if self.client:
-                _log("warning", f"[SSH] Shell fechado em {self.ip}; tentando exec_command")
                 self._exec_mode = True
                 return self._execute_command_exec(command, timeout=timeout)
             raise OLTConnectionError("Shell SSH nao disponivel")
@@ -262,12 +270,10 @@ class OLTSSHClient:
                 if self.shell.recv_ready():
                     chunk = self.shell.recv(8192).decode("utf-8", errors="replace")
                     output += chunk
-                    # Trata paginacao --More--
                     if re.search(r'--\s*[Mm]ore\s*--', chunk):
                         self.shell.send(" ")
                         time.sleep(0.3)
                         continue
-                    # Detecta prompt final (# ou >)
                     if re.search(r'[>#]\s*$', chunk.strip()):
                         break
                 else:
@@ -290,7 +296,7 @@ class OLTSSHClient:
         timeout = timeout or settings.SSH_COMMAND_TIMEOUT
         _log("info", f"[SSH/EXEC] Executando: {_redact_command(command)}")
         try:
-            stdin, stdout, stderr = self.client.exec_command(
+            _, stdout, stderr = self.client.exec_command(
                 command,
                 timeout=timeout,
                 get_pty=True,
@@ -318,7 +324,8 @@ class OLTSSHClient:
                 if not read_any:
                     time.sleep(0.1)
 
-            clean = _clean_output(output + ("\n" + err_output if err_output else ""), command)
+            combined = output + ("\n" + err_output if err_output else "")
+            clean = _clean_output(combined, command)
             _log("debug", f"[SSH/EXEC] Resposta ({len(clean)} chars): {clean[:300]}")
             return clean
         except Exception as e:
@@ -339,9 +346,9 @@ class OLTSSHClient:
 # CLIENTE TELNET
 # ============================================================
 class OLTTelnetClient:
-    """Cliente Telnet para comunicação com OLTs ZTE Titan."""
+    """Transporte Telnet compartilhado entre drivers de OLT."""
 
-    def __init__(self, ip: str, port: int, username: str, password: str):
+    def __init__(self, ip: str, port: int, username: str, password: str, driver):
         self.ip = ip
         self.port = port
         self.username = username
@@ -351,6 +358,7 @@ class OLTTelnetClient:
         self._endpoint_key = (ip, port)
         self._endpoint_lock = None
         self._endpoint_lock_acquired = False
+        self.driver = driver
 
     def _acquire_endpoint(self):
         if self._endpoint_lock_acquired:
@@ -388,30 +396,28 @@ class OLTTelnetClient:
             self.tn = SimpleTelnet(self.ip, self.port, timeout=settings.SSH_TIMEOUT)
             self.tn.open()
 
-            # Aguarda o prompt de login reagindo imediatamente ao banner da Parks.
-            # A Parks 3000/4000 mostra "Press <RETURN> to get started" antes de
-            # Username; se esperarmos apenas Username, o login demora ate timeout.
-            data = b""
-            sent_initial_enter = False
-            login_deadline = time.time() + 25
-            decoded_pre = ""
-            while time.time() < login_deadline:
-                data += self.tn.read_very_eager(wait=0.4)
-                decoded_pre = data.decode("utf-8", errors="replace")
-                lower_pre = decoded_pre.lower()
-                if "username:" in lower_pre:
-                    break
-                if not sent_initial_enter and (
-                    "press <return>" in lower_pre or "press return" in lower_pre
-                ):
-                    _log("debug", "[TELNET] Banner Parks detectado; enviando ENTER inicial")
-                    self.tn.write(b"\n")
-                    sent_initial_enter = True
-                    time.sleep(0.3)
+            pre_auth = b""
+            deadline = time.time() + 25
+            username_markers = self.driver.username_prompt_markers()
+            pre_prompt_markers = self.driver.login_pre_prompt_markers()
+            while time.time() < deadline:
+                chunk = self.tn.read_very_eager(wait=0.4)
+                if not chunk:
                     continue
-                time.sleep(0.1)
+                pre_auth += chunk
+                decoded_pre = pre_auth.decode("utf-8", errors="replace")
+                lower_pre = decoded_pre.lower()
+                if any(marker.lower() in lower_pre for marker in pre_prompt_markers):
+                    self.tn.write(b"\n")
+                    pre_auth = b""
+                    pre_prompt_markers = []
+                    continue
+                if any(marker.lower() in lower_pre for marker in username_markers):
+                    break
+
+            decoded_pre = pre_auth.decode("utf-8", errors="replace")
             _log("debug", f"[TELNET] Recebido antes de Username: {decoded_pre[-200:]}")
-            if "username:" not in decoded_pre.lower():
+            if not any(marker.lower() in decoded_pre.lower() for marker in username_markers):
                 raise OLTConnectionError(
                     f"Login Telnet falhou - prompt Username nao encontrado. "
                     f"Resposta: {decoded_pre[-200:]}"
@@ -422,8 +428,17 @@ class OLTTelnetClient:
             self.tn.write(self.username.encode("ascii") + b"\n")
 
             # Aguarda prompt de senha
-            data = self.tn.read_until(b"Password:", timeout=15)
-            _log("debug", f"[TELNET] Recebido antes de Password: {data.decode('utf-8', errors='replace')[-100:]}")
+            data = self.tn.read_until(b":", timeout=15)
+            decoded_password = data.decode("utf-8", errors="replace")
+            _log("debug", f"[TELNET] Recebido antes de Password: {decoded_password[-100:]}")
+            if not any(
+                marker.lower() in decoded_password.lower()
+                for marker in self.driver.password_prompt_markers()
+            ):
+                raise OLTConnectionError(
+                    f"Login Telnet falhou - prompt Password nao encontrado. "
+                    f"Resposta: {decoded_password[-200:]}"
+                )
 
             # Pausa antes de enviar senha (evita reset em equipamentos lentos)
             time.sleep(0.5)
@@ -436,6 +451,13 @@ class OLTTelnetClient:
             data = self.tn.read_until(b"#", timeout=30)
             decoded = data.decode("utf-8", errors="replace")
             _log("debug", f"[TELNET] Após login: {decoded[-300:]}")
+            if any(
+                marker.lower() in decoded.lower()
+                for marker in self.driver.auth_failure_markers()
+            ):
+                raise OLTConnectionError(
+                    f"Login Telnet rejeitado. Resposta: {decoded[-200:]}"
+                )
 
             if "#" not in decoded and ">" not in decoded:
                 # Tenta mais uma vez (alguns equipamentos são lentos)
@@ -453,13 +475,10 @@ class OLTTelnetClient:
                 self._prompt = (m.group(1) + "#").encode("ascii")
                 _log("info", f"[TELNET] Prompt detectado: {self._prompt.decode()}")
 
-            # Desabilita paginação — tenta múltiplos comandos por compatibilidade
-            # Algumas OLTs (ex: ZTE C300 ARAMARI) entram em estado inconsistente
-            # após 'terminal length 0' e passam a retornar %Code 62310-GPONSRV.
-            # Tentamos em ordem: terminal length 0 → screen-length 0 temporary → skip
             time.sleep(0.3)
             self._pagination_disabled = False
-            for pag_cmd in [b"terminal length 0\n", b"screen-length 0 temporary\n"]:
+            for command in self.driver.pagination_disable_commands():
+                pag_cmd = command.encode("ascii") + b"\n"
                 self.tn.write(pag_cmd)
                 time.sleep(0.8)
                 resp = self.tn.read_very_eager(wait=0.6)
@@ -590,12 +609,15 @@ def _clean_output(output: str, command: str) -> str:
     return '\n'.join(clean).strip()
 
 
-def get_olt_client(ip: str, port: int, username: str, password: str, protocol: str):
-    """Factory para criar o cliente correto baseado no protocolo."""
+def get_olt_client(ip: str, port: int, username: str, password: str, protocol: str, olt_model: str = None):
+    """Factory para criar o cliente correto baseado no protocolo e modelo."""
+    from .olt_drivers import get_driver
+
+    driver = get_driver(olt_model)
     if protocol.lower() == "ssh":
-        return OLTSSHClient(ip, port, username, password)
+        return OLTSSHClient(ip, port, username, password, driver)
     elif protocol.lower() == "telnet":
-        return OLTTelnetClient(ip, port, username, password)
+        return OLTTelnetClient(ip, port, username, password, driver)
     else:
         raise ValueError(f"Protocolo não suportado: {protocol}")
 
@@ -957,33 +979,6 @@ def parse_optical_module_info(output: str) -> Dict:
         else:
             result[key] = value
 
-    # Parks 3000/4000: show interface gponX/Y sfp
-    parks_patterns = {
-        "vendor": r"Name\s*:\s*(\S+)",
-        "product": r"PN\s*:\s*(\S+)",
-        "sequence_number": r"SN\s*:\s*(\S+)",
-        "version_level": r"Rev\s*:\s*(\S+)",
-        "connector": r"Connector\s*:\s*(\S+)",
-        "wavelength": r"Laser Wavelength\s*:\s*(\d+)\s*nm",
-        "temperature": r"Temperature\s*:\s*([-\d.]+)\s*C",
-        "supply_voltage": r"Supply Voltage\s*:\s*([-\d.]+)\s*V",
-        "tx_power": r"TX Output Power\s*:\s*([-\d.]+)\s*dBm",
-        "rx_power": r"RX Input Power\s*:\s*([-\d.]+)\s*dBm",
-    }
-    for key, pattern in parks_patterns.items():
-        if key in result:
-            continue
-        m = re.search(pattern, output, re.IGNORECASE)
-        if not m:
-            continue
-        value = m.group(1).strip()
-        if key in {"temperature", "supply_voltage", "tx_power", "rx_power"}:
-            try:
-                result[key] = float(value)
-            except ValueError:
-                result[key] = value
-        else:
-            result[key] = value
     return result
 
 
@@ -1177,12 +1172,12 @@ def parse_software_version(output: str) -> Dict:
 # ============================================================
 
 def test_olt_connection(ip: str, port: int, username: str, password: str,
-                        protocol: str) -> Tuple[bool, str]:
+                        protocol: str, olt_model: str = None) -> Tuple[bool, str]:
     """Testa a conexão com uma OLT."""
     client = None
     try:
         _log("info", f"[TEST] Testando conexão {protocol.upper()} em {ip}:{port}")
-        client = get_olt_client(ip, port, username, password, protocol)
+        client = get_olt_client(ip, port, username, password, protocol, olt_model)
         client.connect()
         output = client.execute_command("show software")
         if "%Error" in output or "Invalid" in output or "Unknown" in output:
@@ -1333,7 +1328,10 @@ def get_onu_full_details(ip: str, port: int, username: str, password: str,
         onu_idx = f"{slot}/{card}/{pon}:{onu_id}"
 
         _log("info", f"[ONU_FULL] Coletando detalhes de {onu_ref}")
-        client = get_olt_client(ip, port, username, password, protocol)
+        client = get_olt_client(
+            ip, port, username, password, protocol,
+            getattr(driver, "model_key", None),
+        )
         client.connect()
 
         result = {
@@ -1392,7 +1390,10 @@ def get_onu_full_details(ip: str, port: int, username: str, password: str,
             cmd_optical = driver.cmd_optical_module(olt_ref) if driver else f"show optical-module-info {olt_ref}"
             _log("info", f"[ONU_FULL] {cmd_optical}")
             out = client.execute_command(cmd_optical, timeout=15)
-            sfp_info = parse_optical_module_info(out)
+            if driver and hasattr(driver, "parse_optical_module_info"):
+                sfp_info = driver.parse_optical_module_info(out)
+            else:
+                sfp_info = parse_optical_module_info(out)
             if sfp_info:
                 result["sfp_pon"] = sfp_info
         except Exception as e:
@@ -1446,7 +1447,10 @@ def reboot_onu(ip: str, port: int, username: str, password: str,
             cmds = [f"pon-onu-mng {onu_ref}", "reboot", "y"]
 
         _log("info", f"[REBOOT] Iniciando reboot de {onu_ref} em {ip}")
-        client = get_olt_client(ip, port, username, password, protocol)
+        client = get_olt_client(
+            ip, port, username, password, protocol,
+            getattr(driver, "model_key", None),
+        )
         client.connect()
 
         # Passo 1: entrar no modo de gerenciamento
@@ -1514,7 +1518,10 @@ def get_onu_traffic(ip: str, port: int, username: str, password: str,
             cmd = f"show interface {onu_ref}"
 
         _log("info", f"[TRAFFIC] Coletando tráfego de {onu_ref}")
-        client = get_olt_client(ip, port, username, password, protocol)
+        client = get_olt_client(
+            ip, port, username, password, protocol,
+            getattr(driver, "model_key", None),
+        )
         client.connect()
         out = client.execute_command(cmd, timeout=15)
         _log("debug", f"[TRAFFIC] Output bruto ({len(out)} chars): {out[:500]}")

@@ -163,7 +163,7 @@ def test_connection(
     # Testa SSH/Telnet
     from ..olt_client import test_olt_connection
     ssh_ok, ssh_output = test_olt_connection(
-        olt.ip, olt.port, olt.username, olt.password, olt.protocol
+        olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
     )
     if ssh_ok:
         details["ssh_telnet"] = "ok"
@@ -256,7 +256,9 @@ def discover_ports(
     if not ports:
         try:
             logger.info(f"[DISCOVER] Tentando SSH/Telnet ({olt.protocol}) em {olt.ip}:{olt.port}")
-            client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+            client = get_olt_client(
+                olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+            )
             client.connect()
 
             # Estratégia 1: listar portas que já têm ONUs ativas via 'show gpon onu state'
@@ -476,7 +478,9 @@ def get_olt_full_status(
             return cached
 
     try:
-        client = get_olt_client(olt.ip, olt.port, olt.username, olt.password, olt.protocol)
+        client = get_olt_client(
+            olt.ip, olt.port, olt.username, olt.password, olt.protocol, olt.olt_model
+        )
         client.connect()
 
         result = {"olt_id": olt_id, "name": olt.name, "ip": olt.ip}

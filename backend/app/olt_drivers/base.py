@@ -54,6 +54,24 @@ class OLTDriver:
 
     model_key: str = "base"
 
+    # --- Perfil da sessao CLI ---
+
+    def login_pre_prompt_markers(self) -> List[str]:
+        """Marcadores que exigem ENTER antes do prompt de usuario."""
+        return []
+
+    def username_prompt_markers(self) -> List[str]:
+        return ["username:"]
+
+    def password_prompt_markers(self) -> List[str]:
+        return ["password:"]
+
+    def auth_failure_markers(self) -> List[str]:
+        return ["login failed", "authentication failed", "access denied"]
+
+    def pagination_disable_commands(self) -> List[str]:
+        return []
+
     # --- Geração de interfaces ---
 
     def olt_iface(self, slot: int, card: int, pon: int) -> str:
